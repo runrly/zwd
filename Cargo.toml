@@ -5,10 +5,19 @@ edition = "2024"
 rust-version = "1.96"
 description = "Rust CLI for opening Zed workspace files through a managed symlink dock."
 license = "MIT"
+publish = false
+repository = "https://github.com/runrly/zed-workspace-dock"
+homepage = "https://github.com/runrly/zed-workspace-dock"
+readme = "README.md"
+keywords = ["zed", "workspace", "cli", "developer-tools"]
+categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
 name = "zed-workspace-dock"
 path = "src/main.rs"
+
+[package.metadata.dist]
+dist = true
 
 [dependencies]
 clap = { version = "4.6.1", features = ["derive"] }
@@ -43,3 +52,8 @@ lto = "fat"
 codegen-units = 1
 panic = "abort"
 strip = true
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

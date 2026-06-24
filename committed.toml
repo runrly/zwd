@@ -1,0 +1,19 @@
+subject_capitalized = false
+imperative_subject = false
+subject_not_punctuated = true
+line_length = 72
+hard_line_length = 0
+style = "conventional"
+allowed_types = [
+    "build",
+    "chore",
+    "ci",
+    "docs",
+    "feat",
+    "fix",
+    "perf",
+    "refactor",
+    "revert",
+    "style",
+    "test",
+]

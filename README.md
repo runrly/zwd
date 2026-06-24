@@ -4,6 +4,27 @@ Rust CLI for opening Zed workspace files through direct folder mode or a managed
 
 Dock mode creates one marker-protected cache directory with symlinks to the workspace folders, then opens that dock in Zed. This gives the Zed terminal one real root where `ls` shows the linked projects.
 
+## Install
+
+Install the latest release on macOS or Linux:
+
+```bash
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/runrly/zed-workspace-dock/releases/latest/download/zed-workspace-dock-installer.sh | sh
+```
+
+Install the latest release on Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/runrly/zed-workspace-dock/releases/latest/download/zed-workspace-dock-installer.ps1 | iex"
+```
+
+Installers place the binary under Cargo's bin directory by default. Make sure that directory is on your `PATH`.
+
+You can also download platform archives from GitHub Releases. Release artifacts include SHA256 checksums.
+
+Windows support is partial in the MVP: `folders` mode is supported, while `symlink` mode is currently supported on macOS and Linux only.
+
 ## Usage
 
 Create a registered workspace with a generated name:
@@ -127,6 +148,20 @@ JSON Schemas are published under `resources/schemas/` using JSON Schema Draft 20
 - `resources/schemas/zed-dock-marker.schema.json` describes the internal `.zed-dock.json` marker stored inside managed docks.
 
 The schemas are currently documentation/editor/test resources. Runtime parsing still uses the Rust data model and explicit validation errors. The workspace schema mirrors runtime parsing: `folders` is optional at the root, and `zed-dock.mode` is required only when `zed-dock` exists.
+
+## Releases
+
+This project uses Release PRs:
+
+1. Merge feature and fix PRs into `main`.
+2. `release-plz` opens or updates a Release PR with the next version and changelog.
+3. Merge the Release PR.
+4. `release-plz` creates the `vX.Y.Z` tag.
+5. `dist` builds release artifacts, installers, checksums, attestations, and the GitHub Release.
+
+Versioning follows CLI SemVer. `fix` commits bump patch versions. `feat` commits bump minor versions. Breaking changes bump minor versions while the project is below `1.0.0`, then major versions after `1.0.0`.
+
+The first automated release after the manually tested `v0.1.0` baseline is expected to be `v0.1.1`.
 
 ## Safety
 
