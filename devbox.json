@@ -1,10 +1,6 @@
 {
-  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.17.3/.schema/devbox.schema.json",
-  "packages": [
-    "cargo-make@latest",
-    "rustup@latest",
-    "libiconv@latest"
-  ],
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.17.5/.schema/devbox.schema.json",
+  "packages": ["cargo-make@latest", "rustup@latest", "libiconv@latest"],
   "env": {
     "PROJECT_DIR": "$PWD",
     "RUSTUP_HOME": "$PWD/.devbox/rustup",
