@@ -1,33 +1,142 @@
-# Repository Guidelines
+# Zed Workspace Dock Agent Guide
 
-## Project Structure & Module Organization
+Zed Workspace Dock is a Rust CLI for creating and opening Zed `.code-workspace` files through either direct folder mode or a marker-protected symlink dock.
 
-This repository is a Rust CLI for opening Zed workspace files through folder mode or a managed symlink dock. Core code lives in `src/`: `main.rs` wires the binary, `cli.rs` defines command-line parsing, and modules such as `workspace.rs`, `dock.rs`, `zed.rs`, `install.rs`, and `error.rs` hold the main behavior. Integration tests live in `tests/cli.rs`. JSON assets and schemas are under `resources/`, including Zed task templates and workspace/dock marker schemas. Release and project context live in `release-plz.toml`, `dist-workspace.toml`, `docs/adr/`, `CHANGELOG.md`, and `CONTEXT.md`.
+Use this file as the local operating guide for AI agents working in this repository. Keep changes aligned with the current CLI contract in `README.md`, the project language in `CONTEXT.md`, and the release decisions in `docs/adr/`.
 
-## Build, Test, and Development Commands
+> [!IMPORTANT]
+> The supported way to add folders to an existing registered workspace today is to recreate it with `create ... --name <name> --force` and pass the full folder list again. Do not document or implement an incremental `add` workflow unless the CLI actually gains that command.
 
-Use the pinned Rust toolchain from `rust-toolchain.toml`; `devbox shell` prepares the local Cargo/Rustup paths when needed.
+## Current Product Shape
 
-- `cargo build`: compile the CLI.
-- `cargo run -- <args>`: run the binary locally, for example `cargo run -- list`.
-- `cargo fmt --all`: format Rust code.
-- `cargo fmt --all -- --check`: verify formatting in CI-style checks.
-- `cargo check --all-targets`: type-check all targets.
-- `cargo test`: run integration and unit tests.
-- `cargo clippy --all-targets --all-features -- -D warnings`: enforce lint cleanliness.
+- Canonical package and binary: `zed-workspace-dock`.
+- Short binary alias: `zwd`, backed by `src/bin/zwd.rs`.
+- Commands: `create`, `open`, `install`, and `list`.
+- Default create mode: `symlink`.
+- Alternate open/create mode: `folders`.
+- Workspace format: strict JSON `.code-workspace` files with optional `folders` and optional `zed-dock`.
+- Managed state:
+  - Registered workspaces live under the user config directory at `zed-workspace-dock/workspaces/`.
+  - Dock roots live under the platform cache directory at `zed-workspace-dock/docks/`.
+  - Zed task templates come from `resources/zed-tasks.json`.
+  - JSON Schemas live under `resources/schemas/` and are documentation/editor/test resources, not runtime validators.
 
-`Makefile.toml` exposes equivalent `cargo make` tasks (`build`, `test`, `fmt-check`, `clippy`), but direct Cargo commands are the clearest validation path.
+Windows support is partial in the MVP: folder mode is supported, while symlink dock mode is currently macOS/Linux-oriented.
 
-## Coding Style & Naming Conventions
+## Repository Map
 
-Follow Rust 2024 idioms and `rustfmt` defaults. Keep modules focused by CLI domain concept, and prefer explicit error variants via the existing error module. The crate forbids unsafe code and denies nonstandard style plus key Clippy lints in `Cargo.toml`; treat warnings as blockers. Use snake_case for Rust items and kebab-case for CLI-facing command names, files, and release config.
+- `src/main.rs`: thin canonical binary entrypoint.
+- `src/bin/zwd.rs`: short alias binary entrypoint.
+- `src/lib.rs`: command dispatch and public crate entrypoint.
+- `src/cli.rs`: Clap command, flag, and mode definitions.
+- `src/workspace.rs`: workspace creation, parsing, validation, listing, and reference resolution.
+- `src/dock.rs`: symlink dock construction, marker handling, and safety checks.
+- `src/install.rs`: global Zed task installation and merge behavior.
+- `src/zed.rs`: Zed process invocation.
+- `src/error.rs`: typed errors used across the CLI.
+- `tests/cli.rs`: integration coverage for user-visible CLI behavior.
+- `resources/`: task templates and JSON Schemas.
+- `docs/adr/`: accepted project decisions.
+- `release-plz.toml`, `dist-workspace.toml`, `.github/workflows/`: release automation.
 
-## Testing Guidelines
+## Development Commands
 
-Add integration coverage in `tests/cli.rs` for user-visible CLI behavior, filesystem safety, workspace parsing, and Zed invocation arguments. Tests should use temporary directories and `/bin/echo` or another harmless executable when asserting command invocation. Name tests after the behavior being verified, for example `open_rejects_non_code_workspace_input`.
+Use the pinned toolchain from `rust-toolchain.toml`. `devbox shell` or `devbox run -- <command>` is available when the host environment needs the repo toolchain.
 
-## Commit & Pull Request Guidelines
+```bash
+cargo fmt --all -- --check
+cargo check --all-targets
+cargo test
+cargo clippy --all-targets --all-features -- -D warnings
+```
 
-Commits use conventional messages with lowercase imperative subjects, for example `feat: implement workspace dock MVP` or `ci: add release automation`. Allowed types include `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style`, and `test`; keep subjects under 72 characters.
+Useful local commands:
 
-Pull requests should describe the behavior change, note validation commands run, and call out any release, schema, installer, or platform-impacting changes. Include CLI examples or screenshots only when they clarify user-facing behavior.
+```bash
+cargo build
+cargo run -- create ../api ../web --name work
+cargo run -- open work --zed-bin /bin/echo
+cargo run -- list
+```
+
+`Makefile.toml` exposes equivalent `cargo make` tasks, but direct Cargo commands are the preferred validation path in this repo. Prior runs showed `cargo make` can add avoidable friction through extra metadata/download behavior.
+
+## Validation Expectations
+
+For Rust code changes, run at least:
+
+```bash
+cargo fmt --all -- --check
+cargo check --all-targets
+cargo test
+cargo clippy --all-targets --all-features -- -D warnings
+```
+
+For CLI behavior changes, add or update integration tests in `tests/cli.rs`. Prefer temporary directories and harmless executables such as `/bin/echo` when asserting Zed invocation arguments.
+
+For release or installer changes, also inspect:
+
+```bash
+cargo metadata --format-version 1
+```
+
+If a change affects the Zed UX directly, keep the manual Zed smoke-test gap visible until it has actually been exercised in Zed: terminal root, `ls`, search, Git status, LSP behavior, tasks, editing, delete behavior, and file watching.
+
+## Coding Guidelines
+
+- Follow Rust 2024, `rustfmt`, and the lint policy in `Cargo.toml`.
+- Keep `src/main.rs` and `src/bin/zwd.rs` thin. Put behavior in library modules.
+- Preserve the current modular boundaries instead of moving logic into one file.
+- Model user-visible failures through `src/error.rs`; avoid ad hoc string errors in new code.
+- Treat warnings as blockers. The crate denies several Rust and Clippy lint groups and forbids unsafe code.
+- Keep CLI-facing names kebab-case and Rust identifiers snake_case.
+- Use structured JSON parsing via `serde`/`serde_json`; do not hand-roll workspace parsing.
+
+## Safety Rules
+
+- Never modify a dock directory unless it has a valid `.zed-dock.json` marker owned by this tool.
+- Abort on existing dock directories without a valid marker.
+- Abort when unmanaged files are present inside a marker-owned dock.
+- Symlink project folders; do not copy source folders into dock roots.
+- Do not delete or mutate symlink targets.
+- Keep workspace names and dock link names to single filesystem entry names.
+- Preserve the registered-workspace overwrite rule: creation fails unless `--force` is passed.
+- Keep registered workspace resolution precedence: a simple name prefers a registered workspace over a same-name local path.
+
+## Documentation Rules
+
+- Update `README.md` when public install, usage, workspace, safety, or release behavior changes.
+- Update `CONTEXT.md` when terminology or domain language changes.
+- Add an ADR under `docs/adr/` for decisions that alter release flow, CLI contract, persistence layout, or safety rules.
+- Do not add license, changelog, or contributing sections to general docs; those belong in dedicated files.
+- Keep examples current with the simplified create command:
+
+```bash
+zed-workspace-dock create ../api ../web --name work
+zed-workspace-dock create ../api ../web ../docs --name work --force
+```
+
+Avoid the removed `--folder name=path` create syntax.
+
+## Release Notes
+
+This project uses Release PRs:
+
+1. Feature and fix commits merge into `main`.
+2. `release-plz` opens or updates a Release PR.
+3. Merging the Release PR creates the version tag.
+4. `cargo-dist` builds release archives, installers, checksums, attestations, and the GitHub Release.
+
+The package is currently `publish = false`; release artifacts are GitHub Release assets, not crates.io publishing.
+
+## Commit And PR Expectations
+
+Use conventional commit messages with lowercase imperative subjects, for example:
+
+```text
+feat: add registered workspace listing
+fix: reject unmanaged dock contents
+docs: document release automation
+```
+
+PRs should state the behavior change, validation commands run, and any release, schema, installer, persistence, or platform impact.
