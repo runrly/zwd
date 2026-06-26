@@ -13,13 +13,14 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Commands {
     Create {
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
+        #[arg(long)]
         name: Option<String>,
         #[arg(long)]
         output: Option<PathBuf>,
-        #[arg(long)]
+        #[arg(long, default_value = "symlink")]
         mode: Mode,
-        #[arg(long = "folder", required = true)]
-        folder: Vec<String>,
         #[arg(long)]
         force: bool,
     },

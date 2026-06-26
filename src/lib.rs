@@ -13,17 +13,17 @@ use error::Result;
 pub fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Commands::Create {
+            paths,
             name,
             output,
             mode,
-            folder,
             force,
         } => {
             let output = workspace::create_workspace_file(
                 name.as_deref(),
                 output.as_deref(),
                 mode,
-                &folder,
+                &paths,
                 force,
             )?;
             println!("{}", output.display());

@@ -17,7 +17,7 @@
             "minLength": 1
           },
           "path": {
-            "description": "Folder path. Registered workspaces store canonical absolute paths.",
+            "description": "Folder path. Created workspaces store canonical absolute paths.",
             "type": "string",
             "minLength": 1
           }

@@ -17,11 +17,11 @@ A workspace file stored in the user's config directory under `zed-workspace-dock
 _Avoid_: Saved project, cached workspace
 
 **Workspace name**:
-The single filesystem entry name used to address a registered workspace without typing its full `.code-workspace` path. It must not include `.code-workspace`, but `open` accepts the name with or without that extension.
+The single filesystem entry name used to address a registered workspace or name a created workspace file without typing its full `.code-workspace` path. It must not include `.code-workspace`, but `open` accepts registered workspace names with or without that extension.
 _Avoid_: Workspace path, dock name
 
 **Explicit workspace output**:
-A workspace file written to a user-provided path via `create --output`. This path-oriented mode preserves folder paths exactly as entered instead of canonicalising them for the registry.
+A standalone workspace file written inside a user-provided output directory via `create --output`. Explicit workspace outputs are not registered workspaces.
 _Avoid_: Local registry, exported registry entry
 
 **Symlink dock**:
@@ -65,11 +65,11 @@ Older planning text may use pluralized product or binary names, but `zed-workspa
 
 ## Behavior Notes
 
-- `create --mode ... --folder ...` creates a registered workspace with a generated `ws-<16-hex>` name and prints the real file path.
-- `create <name> --mode ... --folder ...` creates a registered workspace with the given name and fails if it already exists unless `--force` is passed.
-- `create --output <path.code-workspace> --mode ... --folder ...` writes an explicit workspace file and prints its canonical path.
-- Registered workspaces store folder paths as canonical absolute paths resolved from the current working directory at creation time.
-- Explicit workspace outputs preserve folder path strings exactly as entered.
+- `create <paths>...` creates a registered workspace with a generated `ws-<16-hex>` name and prints the real file path.
+- `create <paths>... --name <name>` creates a registered workspace with the given workspace name and fails if it already exists unless `--force` is passed.
+- `create <paths>... --name <name> --output <dir>` writes an explicit workspace output in the output directory and prints its canonical path.
+- `create` defaults to dock mode. `--mode folders` creates a folder-mode workspace.
+- Created workspaces store folder paths as canonical absolute paths resolved from the current working directory at creation time.
 - `open <simple-name>` prefers a registered workspace over a same-name file or directory in the current working directory. Use an explicit path such as `./work.code-workspace` when the local file is intended.
 - `list` prints registered workspaces as `name<TAB>path`.
 - Workspace schemas document the current parser behavior: `folders` defaults to an empty list when absent, and `zed-dock.mode` is required only when `zed-dock` exists.

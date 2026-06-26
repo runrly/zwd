@@ -32,20 +32,27 @@ fn stdout_line(output: &Output) -> String {
 #[test]
 fn create_writes_code_workspace_with_dock_config() -> Result<(), Box<dyn Error>> {
     let temp = tempdir()?;
-    let workspace = temp.path().join("demo.code-workspace");
-    let workspace_arg = workspace.to_string_lossy().into_owned();
+    let project_root = temp.path().join("project");
+    let api = project_root.join("api");
+    let web = project_root.join("web");
+    let output_dir = temp.path().join("workspaces");
+    fs::create_dir_all(&api)?;
+    fs::create_dir_all(&web)?;
+    let output_dir_arg = output_dir.to_string_lossy().into_owned();
 
-    let output = run(&[
-        "create",
-        "--output",
-        &workspace_arg,
-        "--mode",
-        "symlink",
-        "--folder",
-        "api=../api",
-        "--folder",
-        "../web",
-    ])?;
+    let output = run_with_home_and_cwd(
+        &[
+            "create",
+            "api",
+            "web",
+            "--name",
+            "demo",
+            "--output",
+            &output_dir_arg,
+        ],
+        temp.path(),
+        &project_root,
+    )?;
 
     assert!(
         output.status.success(),
@@ -53,12 +60,19 @@ fn create_writes_code_workspace_with_dock_config() -> Result<(), Box<dyn Error>>
         String::from_utf8_lossy(&output.stderr)
     );
 
+    let workspace = output_dir.join("demo.code-workspace");
     let document: Value = serde_json::from_str(&fs::read_to_string(&workspace)?)?;
 
     assert_eq!(document["zed-dock"]["mode"], "symlink");
-    assert_eq!(document["folders"][0]["name"], "api");
-    assert_eq!(document["folders"][0]["path"], "../api");
-    assert_eq!(document["folders"][1]["path"], "../web");
+    assert!(document["folders"][0].get("name").is_none());
+    assert_eq!(
+        document["folders"][0]["path"],
+        api.canonicalize()?.to_string_lossy().into_owned()
+    );
+    assert_eq!(
+        document["folders"][1]["path"],
+        web.canonicalize()?.to_string_lossy().into_owned()
+    );
     assert_eq!(
         stdout_line(&output),
         workspace.canonicalize()?.to_string_lossy().into_owned()
@@ -76,11 +90,7 @@ fn create_without_name_registers_generated_workspace_and_prints_path() -> Result
     let api = project_root.join("api");
     fs::create_dir_all(&api)?;
 
-    let output = run_with_home_and_cwd(
-        &["create", "--mode", "symlink", "--folder", "api=api"],
-        &home,
-        &project_root,
-    )?;
+    let output = run_with_home_and_cwd(&["create", "api"], &home, &project_root)?;
 
     assert!(
         output.status.success(),
@@ -98,10 +108,45 @@ fn create_without_name_registers_generated_workspace_and_prints_path() -> Result
 
     assert!(file_name.starts_with("ws-"));
     assert!(file_name.ends_with(".code-workspace"));
+    assert_eq!(document["zed-dock"]["mode"], "symlink");
     assert_eq!(
         document["folders"][0]["path"],
         api.canonicalize()?.to_string_lossy().into_owned()
     );
+
+    Ok(())
+}
+
+#[test]
+fn create_output_without_name_generates_workspace_in_output_dir() -> Result<(), Box<dyn Error>> {
+    let temp = tempdir()?;
+    let project_root = temp.path().join("project");
+    let api = project_root.join("api");
+    let output_dir = temp.path().join("workspaces");
+    fs::create_dir_all(&api)?;
+    let output_dir_arg = output_dir.to_string_lossy().into_owned();
+
+    let output = run_with_home_and_cwd(
+        &["create", "api", "--output", &output_dir_arg],
+        temp.path(),
+        &project_root,
+    )?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let workspace = stdout_line(&output);
+    let workspace_path = Path::new(&workspace);
+    let file_name = workspace_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .expect("workspace path must have a UTF-8 file name");
+
+    assert!(file_name.starts_with("ws-"));
+    assert!(workspace_path.starts_with(output_dir.canonicalize()?));
 
     Ok(())
 }
@@ -115,9 +160,7 @@ fn create_list_and_open_registered_workspace_by_name() -> Result<(), Box<dyn Err
     fs::create_dir_all(&api)?;
 
     let create = run_with_home_and_cwd(
-        &[
-            "create", "custom", "--mode", "folders", "--folder", "api=api",
-        ],
+        &["create", "api", "--name", "custom", "--mode", "folders"],
         &home,
         &project_root,
     )?;
@@ -166,6 +209,54 @@ fn create_list_and_open_registered_workspace_by_name() -> Result<(), Box<dyn Err
     assert_eq!(
         stdout_line(&open_with_extension),
         api.canonicalize()?.to_string_lossy()
+    );
+
+    Ok(())
+}
+
+#[test]
+fn create_requires_force_to_overwrite_output_workspace() -> Result<(), Box<dyn Error>> {
+    let temp = tempdir()?;
+    let project_root = temp.path().join("project");
+    let api = project_root.join("api");
+    let output_dir = temp.path().join("workspaces");
+    fs::create_dir_all(&api)?;
+    fs::create_dir_all(&output_dir)?;
+    fs::write(output_dir.join("demo.code-workspace"), "{}")?;
+    let output_dir_arg = output_dir.to_string_lossy().into_owned();
+
+    let output = run_with_home_and_cwd(
+        &[
+            "create",
+            "api",
+            "--name",
+            "demo",
+            "--output",
+            &output_dir_arg,
+        ],
+        temp.path(),
+        &project_root,
+    )?;
+    let forced = run_with_home_and_cwd(
+        &[
+            "create",
+            "api",
+            "--name",
+            "demo",
+            "--output",
+            &output_dir_arg,
+            "--force",
+        ],
+        temp.path(),
+        &project_root,
+    )?;
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("--force"));
+    assert!(
+        forced.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&forced.stderr)
     );
 
     Ok(())
@@ -225,24 +316,109 @@ fn open_rejects_non_code_workspace_input() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
-fn create_rejects_parent_dir_link_name() -> Result<(), Box<dyn Error>> {
+fn create_rejects_output_file_path() -> Result<(), Box<dyn Error>> {
     let temp = tempdir()?;
+    let project = temp.path().join("api");
+    fs::create_dir(&project)?;
     let workspace = temp.path().join("demo.code-workspace");
+    let project_arg = project.to_string_lossy().into_owned();
     let workspace_arg = workspace.to_string_lossy().into_owned();
+
+    let output = run(&["create", &project_arg, "--output", &workspace_arg])?;
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("--output expects a directory"));
+    assert!(!workspace.exists());
+
+    Ok(())
+}
+
+#[test]
+fn create_rejects_removed_folder_flag() -> Result<(), Box<dyn Error>> {
+    let output = run(&["create", "api", "--folder", "api"])?;
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("unexpected argument '--folder'"));
+
+    Ok(())
+}
+
+#[test]
+fn create_rejects_missing_folder_path() -> Result<(), Box<dyn Error>> {
+    let temp = tempdir()?;
+    let missing = temp.path().join("missing");
+    let missing_arg = missing.to_string_lossy().into_owned();
+
+    let output = run(&["create", &missing_arg])?;
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("folder path does not exist"));
+
+    Ok(())
+}
+
+#[test]
+fn create_rejects_non_directory_path() -> Result<(), Box<dyn Error>> {
+    let temp = tempdir()?;
+    let file = temp.path().join("file.txt");
+    fs::write(&file, "")?;
+    let file_arg = file.to_string_lossy().into_owned();
+
+    let output = run(&["create", &file_arg])?;
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("folder target is not a directory"));
+
+    Ok(())
+}
+
+#[test]
+fn create_symlink_mode_rejects_duplicate_basenames() -> Result<(), Box<dyn Error>> {
+    let temp = tempdir()?;
+    let left = temp.path().join("left/api");
+    let right = temp.path().join("right/api");
+    fs::create_dir_all(&left)?;
+    fs::create_dir_all(&right)?;
+    let left_arg = left.to_string_lossy().into_owned();
+    let right_arg = right.to_string_lossy().into_owned();
+
+    let output = run(&["create", &left_arg, &right_arg])?;
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("duplicate folder name"));
+
+    Ok(())
+}
+
+#[test]
+fn create_folders_mode_allows_duplicate_basenames() -> Result<(), Box<dyn Error>> {
+    let temp = tempdir()?;
+    let left = temp.path().join("left/api");
+    let right = temp.path().join("right/api");
+    let output_dir = temp.path().join("workspaces");
+    fs::create_dir_all(&left)?;
+    fs::create_dir_all(&right)?;
+    let left_arg = left.to_string_lossy().into_owned();
+    let right_arg = right.to_string_lossy().into_owned();
+    let output_dir_arg = output_dir.to_string_lossy().into_owned();
 
     let output = run(&[
         "create",
-        "--output",
-        &workspace_arg,
+        &left_arg,
+        &right_arg,
         "--mode",
-        "symlink",
-        "--folder",
-        "../x=/tmp",
+        "folders",
+        "--name",
+        "demo",
+        "--output",
+        &output_dir_arg,
     ])?;
 
-    assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("invalid dock link name"));
-    assert!(!workspace.exists());
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     Ok(())
 }

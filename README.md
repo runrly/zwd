@@ -30,10 +30,7 @@ Windows support is partial in the MVP: `folders` mode is supported, while `symli
 Create a registered workspace with a generated name:
 
 ```bash
-zed-workspace-dock create \
-  --mode symlink \
-  --folder api=../api \
-  --folder ../web
+zed-workspace-dock create ../api ../web
 ```
 
 The command prints the real `.code-workspace` path it created under the user config directory, for example `~/Library/Application Support/zed-workspace-dock/workspaces/ws-abcd0001020304ff.code-workspace` on macOS.
@@ -41,19 +38,13 @@ The command prints the real `.code-workspace` path it created under the user con
 Create a registered workspace with an explicit name:
 
 ```bash
-zed-workspace-dock create work \
-  --mode symlink \
-  --folder api=../api \
-  --folder ../web
+zed-workspace-dock create ../api ../web --name work
 ```
 
 Recreate an existing registered workspace:
 
 ```bash
-zed-workspace-dock create work --force \
-  --mode symlink \
-  --folder api=../api \
-  --folder ../web
+zed-workspace-dock create ../api ../web --name work --force
 ```
 
 Open a registered workspace by name:
@@ -76,25 +67,28 @@ The output is one registered workspace per line:
 work	/Users/alice/Library/Application Support/zed-workspace-dock/workspaces/work.code-workspace
 ```
 
-Create a workspace file at an explicit path:
+Create a workspace file in an output directory:
 
 ```bash
-zed-workspace-dock create --output work.code-workspace \
-  --mode symlink \
-  --folder api=../api \
-  --folder ../web
+zed-workspace-dock create ../api ../web --name work --output ../workspaces
+```
+
+Create a workspace in folder mode:
+
+```bash
+zed-workspace-dock create ../api ../web --mode folders
 ```
 
 Open a workspace by path:
 
 ```bash
-zed-workspace-dock open work.code-workspace
+zed-workspace-dock open ../workspaces/work.code-workspace
 ```
 
 Force folder mode for one run:
 
 ```bash
-zed-workspace-dock open work.code-workspace --mode folders
+zed-workspace-dock open ../workspaces/work.code-workspace --mode folders
 ```
 
 Install global Zed tasks:
@@ -136,9 +130,9 @@ Installed tasks use `$ZED_FILE`. Run them while a `.code-workspace` file is open
 
 The MVP accepts strict JSON `.code-workspace` files only. If `zed-dock` exists, `mode` is required. Supported modes are `folders` and `symlink`.
 
-Registered workspaces are stored under the user config directory at `zed-workspace-dock/workspaces/`. When `create` writes a registered workspace, folder paths are resolved from the current working directory and stored as absolute canonical paths so the workspace can be opened from any directory. When `create --output` writes an explicit file, folder paths are preserved exactly as passed.
+Registered workspaces are stored under the user config directory at `zed-workspace-dock/workspaces/`. Workspaces created with `--output <dir>` are standalone files in that directory and are opened by path.
 
-The runtime parser defaults a missing `folders` field to an empty list. The `create` command always writes `folders`, but hand-written workspace files may omit it.
+The `create` command accepts one or more folder paths as positional arguments. It writes `symlink` mode unless `--mode folders` is passed. It stores canonical absolute folder paths for both registered workspaces and output-directory workspaces. The runtime parser defaults a missing `folders` field to an empty list. The `create` command always writes `folders`, but hand-written workspace files may omit it.
 
 ## Schemas
 

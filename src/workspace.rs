@@ -31,7 +31,7 @@ struct DockConfig {
     mode: Option<Mode>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WorkspaceFolder {
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
@@ -76,21 +76,17 @@ pub(crate) fn read_workspace_file(path: &Path) -> Result<WorkspaceFile> {
 
 pub(crate) fn create_workspace_file(
     name: Option<&str>,
-    output: Option<&Path>,
+    output_dir: Option<&Path>,
     mode: Mode,
-    folders: &[String],
+    paths: &[PathBuf],
     force: bool,
 ) -> Result<PathBuf> {
-    if name.is_some() && output.is_some() {
-        return Err(AppError::ConflictingWorkspaceDestination);
-    }
+    let current_dir = std::env::current_dir()?;
+    let folders = create_folders(paths, &current_dir, mode)?;
 
-    match output {
-        Some(output) => {
-            write_workspace_file(output, mode, folders)?;
-            fs::canonicalize(output).map_err(AppError::from)
-        }
-        None => create_registered_workspace(name, mode, folders, force),
+    match output_dir {
+        Some(output_dir) => create_output_workspace(output_dir, name, mode, &folders, force),
+        None => create_registered_workspace(name, mode, &folders, force),
     }
 }
 
@@ -125,14 +121,110 @@ pub(crate) fn list_registered_workspaces() -> Result<Vec<RegisteredWorkspace>> {
     list_registered_workspaces_in(&registered_workspaces_dir()?)
 }
 
-pub(crate) fn write_workspace_file(output: &Path, mode: Mode, folders: &[String]) -> Result<()> {
-    ensure_code_workspace_path(output)?;
+fn create_registered_workspace(
+    name: Option<&str>,
+    mode: Mode,
+    folders: &[WorkspaceFolder],
+    force: bool,
+) -> Result<PathBuf> {
+    let workspaces_dir = registered_workspaces_dir()?;
 
+    create_registered_workspace_in(&workspaces_dir, name, mode, folders, force)
+}
+
+fn create_registered_workspace_in(
+    workspaces_dir: &Path,
+    name: Option<&str>,
+    mode: Mode,
+    folders: &[WorkspaceFolder],
+    force: bool,
+) -> Result<PathBuf> {
+    fs::create_dir_all(workspaces_dir)?;
+
+    let output = match name {
+        Some(name) => {
+            let output = workspace_path_in(workspaces_dir, name)?;
+            ensure_can_write_workspace(&output, force)?;
+            output
+        }
+        None => generated_workspace_path_in(workspaces_dir)?,
+    };
+
+    write_workspace_document(&output, mode, folders)?;
+
+    Ok(output)
+}
+
+fn create_output_workspace(
+    output_dir: &Path,
+    name: Option<&str>,
+    mode: Mode,
+    folders: &[WorkspaceFolder],
+    force: bool,
+) -> Result<PathBuf> {
+    ensure_output_directory_arg(output_dir)?;
+    fs::create_dir_all(output_dir)?;
+
+    let output = match name {
+        Some(name) => {
+            let output = workspace_path_in(output_dir, name)?;
+            ensure_can_write_workspace(&output, force)?;
+            output
+        }
+        None => generated_workspace_path_in(output_dir)?,
+    };
+
+    write_workspace_document(&output, mode, folders)?;
+    fs::canonicalize(output).map_err(AppError::from)
+}
+
+fn create_folders(paths: &[PathBuf], base_dir: &Path, mode: Mode) -> Result<Vec<WorkspaceFolder>> {
+    let folders = paths
+        .iter()
+        .map(|path| resolve_create_folder(base_dir, path))
+        .collect::<Result<Vec<_>>>()?;
+
+    if mode == Mode::Symlink {
+        validate_dock_link_names(&folders)?;
+    }
+
+    Ok(folders)
+}
+
+fn resolve_create_folder(base_dir: &Path, path: &Path) -> Result<WorkspaceFolder> {
+    if path.as_os_str().is_empty() {
+        return Err(AppError::EmptyFolderPath);
+    }
+
+    let resolved = canonicalize_folder_arg(base_dir, path)?;
+    if !resolved.is_dir() {
+        return Err(AppError::FolderTargetNotDirectory { path: resolved });
+    }
+
+    Ok(WorkspaceFolder {
+        name: None,
+        path: resolved,
+    })
+}
+
+fn validate_dock_link_names(folders: &[WorkspaceFolder]) -> Result<()> {
+    let mut names = HashSet::new();
+
+    for folder in folders {
+        let link_name = folder_link_name(folder, &folder.path)?;
+        if !names.insert(case_insensitive_link_key(&link_name)) {
+            return Err(AppError::DuplicateFolderName {
+                name: link_name.as_str().to_string(),
+            });
+        }
+    }
+
+    Ok(())
+}
+
+fn write_workspace_document(output: &Path, mode: Mode, folders: &[WorkspaceFolder]) -> Result<()> {
     let workspace = WorkspaceFile {
-        folders: folders
-            .iter()
-            .map(|folder| parse_folder_arg(folder))
-            .collect::<Result<Vec<_>>>()?,
+        folders: folders.to_vec(),
         zed_dock: Some(DockConfig { mode: Some(mode) }),
     };
 
@@ -142,48 +234,24 @@ pub(crate) fn write_workspace_file(output: &Path, mode: Mode, folders: &[String]
     Ok(())
 }
 
-fn create_registered_workspace(
-    name: Option<&str>,
-    mode: Mode,
-    folders: &[String],
-    force: bool,
-) -> Result<PathBuf> {
-    let workspaces_dir = registered_workspaces_dir()?;
-    let current_dir = std::env::current_dir()?;
+fn ensure_output_directory_arg(output_dir: &Path) -> Result<()> {
+    if output_dir
+        .extension()
+        .and_then(|extension| extension.to_str())
+        == Some(WORKSPACE_EXTENSION)
+    {
+        return Err(AppError::OutputPathLooksLikeWorkspaceFile {
+            path: output_dir.to_path_buf(),
+        });
+    }
 
-    create_registered_workspace_in(&workspaces_dir, name, mode, folders, force, &current_dir)
-}
+    if output_dir.exists() && !output_dir.is_dir() {
+        return Err(AppError::OutputPathNotDirectory {
+            path: output_dir.to_path_buf(),
+        });
+    }
 
-fn create_registered_workspace_in(
-    workspaces_dir: &Path,
-    name: Option<&str>,
-    mode: Mode,
-    folders: &[String],
-    force: bool,
-    base_dir: &Path,
-) -> Result<PathBuf> {
-    fs::create_dir_all(workspaces_dir)?;
-    let workspace = WorkspaceFile {
-        folders: folders
-            .iter()
-            .map(|folder| parse_registered_folder_arg(folder, base_dir))
-            .collect::<Result<Vec<_>>>()?,
-        zed_dock: Some(DockConfig { mode: Some(mode) }),
-    };
-    let content = serde_json::to_string_pretty(&workspace)?;
-
-    let output = match name {
-        Some(name) => {
-            let output = registered_workspace_path_in(workspaces_dir, name)?;
-            ensure_can_write_registered_workspace(&output, force)?;
-            output
-        }
-        None => generated_registered_workspace_path(workspaces_dir)?,
-    };
-
-    fs::write(&output, format!("{content}\n"))?;
-
-    Ok(output)
+    Ok(())
 }
 
 fn registered_workspaces_dir() -> Result<PathBuf> {
@@ -197,19 +265,19 @@ fn registered_workspaces_dir_in(config_dir: &Path) -> PathBuf {
 }
 
 fn registered_workspace_path(name: &str) -> Result<PathBuf> {
-    registered_workspace_path_in(&registered_workspaces_dir()?, name)
+    workspace_path_in(&registered_workspaces_dir()?, name)
 }
 
-fn registered_workspace_path_in(workspaces_dir: &Path, name: &str) -> Result<PathBuf> {
+fn workspace_path_in(workspaces_dir: &Path, name: &str) -> Result<PathBuf> {
     validate_workspace_name(name)?;
 
     Ok(workspaces_dir.join(format!("{name}.{WORKSPACE_EXTENSION}")))
 }
 
-fn generated_registered_workspace_path(workspaces_dir: &Path) -> Result<PathBuf> {
+fn generated_workspace_path_in(workspaces_dir: &Path) -> Result<PathBuf> {
     for _ in 0..GENERATED_NAME_ATTEMPTS {
         let name = generated_workspace_name()?;
-        let output = registered_workspace_path_in(workspaces_dir, &name)?;
+        let output = workspace_path_in(workspaces_dir, &name)?;
 
         if !output.exists() {
             return Ok(output);
@@ -230,7 +298,7 @@ fn generated_workspace_name_from_bytes(bytes: [u8; 8]) -> String {
     format!("ws-{}", hex::encode(bytes))
 }
 
-fn ensure_can_write_registered_workspace(output: &Path, force: bool) -> Result<()> {
+fn ensure_can_write_workspace(output: &Path, force: bool) -> Result<()> {
     if output.exists() && !force {
         return Err(AppError::WorkspaceAlreadyExists {
             path: output.to_path_buf(),
@@ -443,13 +511,6 @@ fn validate_link_name(name: &str) -> Result<()> {
     Ok(())
 }
 
-fn parse_registered_folder_arg(input: &str, base_dir: &Path) -> Result<WorkspaceFolder> {
-    let mut folder = parse_folder_arg(input)?;
-    folder.path = canonicalize_folder_arg(base_dir, &folder.path)?;
-
-    Ok(folder)
-}
-
 fn canonicalize_folder_arg(base_dir: &Path, path: &Path) -> Result<PathBuf> {
     let joined = if path.is_absolute() {
         path.to_path_buf()
@@ -460,29 +521,6 @@ fn canonicalize_folder_arg(base_dir: &Path, path: &Path) -> Result<PathBuf> {
     fs::canonicalize(&joined).map_err(|source| AppError::FolderResolve {
         path: joined,
         source,
-    })
-}
-
-fn parse_folder_arg(input: &str) -> Result<WorkspaceFolder> {
-    if let Some((name, path)) = input.split_once('=') {
-        if name.is_empty() || path.is_empty() {
-            return Err(AppError::InvalidFolderArgument);
-        }
-        LinkName::new(name)?;
-
-        return Ok(WorkspaceFolder {
-            name: Some(name.to_string()),
-            path: PathBuf::from(path),
-        });
-    }
-
-    if input.is_empty() {
-        return Err(AppError::EmptyFolderPath);
-    }
-
-    Ok(WorkspaceFolder {
-        name: None,
-        path: PathBuf::from(input),
     })
 }
 
@@ -594,10 +632,9 @@ mod tests {
 
     #[test]
     fn rejects_workspace_name_with_extension() {
-        let error =
-            registered_workspace_path_in(Path::new("/tmp/workspaces"), "demo.code-workspace")
-                .unwrap_err()
-                .to_string();
+        let error = workspace_path_in(Path::new("/tmp/workspaces"), "demo.code-workspace")
+            .unwrap_err()
+            .to_string();
 
         assert!(error.contains("must not include an extension"));
     }
@@ -608,7 +645,8 @@ mod tests {
         let workspaces_dir = temp.path().join("registry");
         let project = temp.path().join("api");
         fs::create_dir(&project).unwrap();
-        let folders = vec!["api=api".to_string()];
+        let paths = vec![PathBuf::from("api")];
+        let folders = create_folders(&paths, temp.path(), Mode::Symlink).unwrap();
 
         let output = create_registered_workspace_in(
             &workspaces_dir,
@@ -616,7 +654,6 @@ mod tests {
             Mode::Symlink,
             &folders,
             false,
-            temp.path(),
         )
         .unwrap();
 
@@ -633,7 +670,8 @@ mod tests {
         let workspaces_dir = temp.path().join("registry");
         let project = temp.path().join("api");
         fs::create_dir(&project).unwrap();
-        let folders = vec!["api=api".to_string()];
+        let paths = vec![PathBuf::from("api")];
+        let folders = create_folders(&paths, temp.path(), Mode::Symlink).unwrap();
 
         create_registered_workspace_in(
             &workspaces_dir,
@@ -641,7 +679,6 @@ mod tests {
             Mode::Symlink,
             &folders,
             false,
-            temp.path(),
         )
         .unwrap();
 
@@ -651,7 +688,6 @@ mod tests {
             Mode::Symlink,
             &folders,
             false,
-            temp.path(),
         )
         .unwrap_err()
         .to_string();
@@ -665,7 +701,8 @@ mod tests {
         let workspaces_dir = temp.path().join("registry");
         let project = temp.path().join("api");
         fs::create_dir(&project).unwrap();
-        let folders = vec!["api=api".to_string()];
+        let paths = vec![PathBuf::from("api")];
+        let folders = create_folders(&paths, temp.path(), Mode::Symlink).unwrap();
 
         create_registered_workspace_in(
             &workspaces_dir,
@@ -673,7 +710,6 @@ mod tests {
             Mode::Symlink,
             &folders,
             false,
-            temp.path(),
         )
         .unwrap();
         create_registered_workspace_in(
@@ -682,7 +718,6 @@ mod tests {
             Mode::Folders,
             &folders,
             true,
-            temp.path(),
         )
         .unwrap();
         let workspace: WorkspaceFile = serde_json::from_str(

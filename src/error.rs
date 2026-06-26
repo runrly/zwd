@@ -28,21 +28,23 @@ pub enum AppError {
     DuplicateFolderName { name: String },
     #[error("invalid dock link name {name:?}: {reason}")]
     InvalidLinkName { name: String, reason: &'static str },
-    #[error("folder entries must use name=path or path")]
-    InvalidFolderArgument,
     #[error("folder path cannot be empty")]
     EmptyFolderPath,
+    #[error(
+        "--output expects a directory, not a .code-workspace file: {path}; use --name with an output directory"
+    )]
+    OutputPathLooksLikeWorkspaceFile { path: PathBuf },
+    #[error("--output exists and is not a directory: {path}")]
+    OutputPathNotDirectory { path: PathBuf },
     #[error("cache directory not found")]
     CacheDirNotFound,
     #[error("home directory not found")]
     HomeDirNotFound,
     #[error("config directory not found")]
     ConfigDirNotFound,
-    #[error("workspace name and --output cannot be used together")]
-    ConflictingWorkspaceDestination,
     #[error("invalid workspace name {name:?}: {reason}")]
     InvalidWorkspaceName { name: String, reason: &'static str },
-    #[error("registered workspace already exists; use --force to overwrite: {path}")]
+    #[error("workspace already exists; use --force to overwrite: {path}")]
     WorkspaceAlreadyExists { path: PathBuf },
     #[error("registered workspace not found: {name}")]
     RegisteredWorkspaceNotFound { name: String },
