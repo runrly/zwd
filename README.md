@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/runrly/zed-workspace-dock/actions/workflows/ci.yml"><img src="https://shieldcn.dev/github/ci/runrly/zed-workspace-dock.svg?workflow=ci.yml&branch=main&variant=secondary" alt="CI" /></a>
-  <a href="https://github.com/runrly/zed-workspace-dock/releases"><img src="https://shieldcn.dev/badge/Release-pending-71717a.svg?logo=github&variant=secondary" alt="Release pending" /></a>
+  <a href="https://github.com/runrly/zed-workspace-dock/releases"><img src="https://shieldcn.dev/github/release/runrly/zed-workspace-dock.svg?variant=secondary" alt="Release" /></a>
   <a href="https://github.com/runrly/zed-workspace-dock"><img src="https://shieldcn.dev/github/license/runrly/zed-workspace-dock.svg?variant=secondary" alt="License" /></a>
   <a href="rust-toolchain.toml"><img src="https://shieldcn.dev/badge/Rust-1.96%2B-b7410e.svg?logo=rust&variant=secondary" alt="Rust 1.96+" /></a>
 </p>
