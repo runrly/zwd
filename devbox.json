@@ -4,6 +4,7 @@
     "cargo-make@latest",
     "rustup@latest",
     "libiconv@latest",
+    "release-plz@0.3.159",
     "committed@1.1.11"
   ],
   "env": {

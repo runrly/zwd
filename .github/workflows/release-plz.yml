@@ -23,9 +23,12 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
-      - name: Run release-plz
-        uses: release-plz/action@v0.5
-        env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+      - name: Install Devbox
+        uses: jetify-com/devbox-install-action@v0.15.0
         with:
-          config: release-plz.toml
+          enable-cache: true
+      - name: Run release-plz
+        env:
+          GIT_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: devbox run -- release-plz release-pr --config release-plz.toml
