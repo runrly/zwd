@@ -207,7 +207,19 @@ The schemas are documentation, editor, and test resources. Runtime parsing still
 
 ## Development
 
-Use the pinned Rust toolchain from `rust-toolchain.toml`.
+Use the pinned Rust toolchain from `rust-toolchain.toml`. If the host does not already have the toolchain and support packages, use the repo Devbox environment:
+
+```bash
+devbox shell
+```
+
+Or run any command through Devbox without entering a shell:
+
+```bash
+devbox run -- cargo check --all-targets --locked
+```
+
+Run the core checks:
 
 ```bash
 cargo fmt --all -- --check
