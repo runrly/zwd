@@ -9,10 +9,6 @@ use serde_json::Value;
 use tempfile::tempdir;
 
 fn binary() -> &'static str {
-    env!("CARGO_BIN_EXE_zed-workspace-dock")
-}
-
-fn short_binary() -> &'static str {
     env!("CARGO_BIN_EXE_zwd")
 }
 
@@ -34,8 +30,8 @@ fn stdout_line(output: &Output) -> String {
 }
 
 #[test]
-fn short_binary_alias_launches_same_cli() -> Result<(), Box<dyn Error>> {
-    let output = Command::new(short_binary()).arg("--help").output()?;
+fn public_command_launches_cli() -> Result<(), Box<dyn Error>> {
+    let output = Command::new(binary()).arg("--help").output()?;
 
     assert!(
         output.status.success(),
@@ -511,7 +507,7 @@ fn install_writes_root_array_from_resource() -> Result<(), Box<dyn Error>> {
     let temp = tempdir()?;
     let tasks_path = temp.path().join("tasks.json");
     let tasks_path_arg = tasks_path.to_string_lossy().into_owned();
-    let command_path = temp.path().join("zed-workspace-dock");
+    let command_path = temp.path().join("zwd");
     fs::write(&command_path, "")?;
     let command_arg = command_path.to_string_lossy().into_owned();
 

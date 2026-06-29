@@ -13,10 +13,6 @@ keywords = ["zed", "workspace", "cli", "developer-tools"]
 categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
-name = "zed-workspace-dock"
-path = "src/main.rs"
-
-[[bin]]
 name = "zwd"
 path = "src/bin/zwd.rs"
 

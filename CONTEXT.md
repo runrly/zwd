@@ -5,19 +5,19 @@ Zed Workspace Dock is a developer tool for opening multi-project Zed sessions fr
 ## Language
 
 **Zed Workspace Dock**:
-The product and CLI that reads a workspace file and opens projects in Zed through either direct folders or a managed symlink dock.
+The product and Cargo package that reads a workspace file and opens projects in Zed through either direct folders or a managed symlink dock.
 _Avoid_: the pluralized product and binary names
 
-**Short binary alias**:
-`zwd` is the supported short command name for the same CLI. The product, package, and canonical binary name remain Zed Workspace Dock and `zed-workspace-dock`.
-_Avoid_: product name, package name
+**Public command**:
+`zwd` is the only installed and user-facing CLI binary. It is short for Zed Workspace Dock; the product, repository, Cargo package, and managed state directories remain Zed Workspace Dock and `zed-workspace-dock`.
+_Avoid_: alias, package name as command
 
 **Workspace file**:
 A `.code-workspace` file describing one or more project folders for a Zed session. In the MVP, each workspace file has zero or one `zed-dock` configuration object.
 _Avoid_: Project file, session file
 
 **Registered workspace**:
-A workspace file stored in the user's config directory under `zed-workspace-dock/workspaces/`. Registered workspaces can be opened by name and are listed by `zed-workspace-dock list`.
+A workspace file stored in the user's config directory under `zed-workspace-dock/workspaces/`. Registered workspaces can be opened by name and are listed by `zwd list`.
 _Avoid_: Saved project, cached workspace
 
 **Workspace name**:
@@ -61,11 +61,11 @@ A file attached to a GitHub Release for users or installers to download, such as
 _Avoid_: Build output, CI artifact
 
 **Installer**:
-A release artifact that downloads the matching platform archive and places the `zed-workspace-dock` binary on the user's machine.
+A release artifact that downloads the matching platform archive and places the `zwd` binary on the user's machine.
 _Avoid_: Package manager, setup task
 
 **Flagged ambiguities**:
-Older planning text may use pluralized product or binary names, but `zed-workspace-dock` is the canonical project and binary name.
+Older planning text may use pluralized product names or describe `zwd` as an alias. Current language keeps `zed-workspace-dock` for the project/package and `zwd` for the public command.
 
 ## Behavior Notes
 

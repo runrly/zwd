@@ -9,8 +9,8 @@ Use this file as the local operating guide for AI agents working in this reposit
 
 ## Current Product Shape
 
-- Canonical package and binary: `zed-workspace-dock`.
-- Short binary alias: `zwd`, backed by `src/bin/zwd.rs`.
+- Canonical product and package: `zed-workspace-dock`.
+- Public command and only installed binary: `zwd`, backed by `src/bin/zwd.rs`.
 - Commands: `create`, `open`, `install`, and `list`.
 - Default create mode: `symlink`.
 - Alternate open/create mode: `folders`.
@@ -25,8 +25,7 @@ Windows support is partial in the MVP: folder mode is supported, while symlink d
 
 ## Repository Map
 
-- `src/main.rs`: thin canonical binary entrypoint.
-- `src/bin/zwd.rs`: short alias binary entrypoint.
+- `src/bin/zwd.rs`: thin public binary entrypoint.
 - `src/lib.rs`: command dispatch and public crate entrypoint.
 - `src/cli.rs`: Clap command, flag, and mode definitions.
 - `src/workspace.rs`: workspace creation, parsing, validation, listing, and reference resolution.
@@ -85,7 +84,7 @@ If a change affects the Zed UX directly, keep the manual Zed smoke-test gap visi
 ## Coding Guidelines
 
 - Follow Rust 2024, `rustfmt`, and the lint policy in `Cargo.toml`.
-- Keep `src/main.rs` and `src/bin/zwd.rs` thin. Put behavior in library modules.
+- Keep `src/bin/zwd.rs` thin. Put behavior in library modules.
 - Preserve the current modular boundaries instead of moving logic into one file.
 - Model user-visible failures through `src/error.rs`; avoid ad hoc string errors in new code.
 - Treat warnings as blockers. The crate denies several Rust and Clippy lint groups and forbids unsafe code.
@@ -112,8 +111,8 @@ If a change affects the Zed UX directly, keep the manual Zed smoke-test gap visi
 - Keep examples current with the simplified create command:
 
 ```bash
-zed-workspace-dock create ../api ../web --name work
-zed-workspace-dock create ../api ../web ../docs --name work --force
+zwd create ../api ../web --name work
+zwd create ../api ../web ../docs --name work --force
 ```
 
 Avoid the removed `--folder name=path` create syntax.

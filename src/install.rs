@@ -170,8 +170,8 @@ mod tests {
         )
         .unwrap();
 
-        install_tasks_at(&tasks_path, Path::new("/usr/local/bin/zed-workspace-dock")).unwrap();
-        install_tasks_at(&tasks_path, Path::new("/usr/local/bin/zed-workspace-dock")).unwrap();
+        install_tasks_at(&tasks_path, Path::new("/usr/local/bin/zwd")).unwrap();
+        install_tasks_at(&tasks_path, Path::new("/usr/local/bin/zwd")).unwrap();
 
         let tasks: Vec<Value> =
             serde_json::from_str(&fs::read_to_string(tasks_path).unwrap()).unwrap();
@@ -192,12 +192,12 @@ mod tests {
 
     #[test]
     fn task_templates_use_absolute_command_path() {
-        let tasks = task_templates(Path::new("/usr/local/bin/zed-workspace-dock")).unwrap();
+        let tasks = task_templates(Path::new("/usr/local/bin/zwd")).unwrap();
 
         assert!(tasks.iter().all(|task| {
             task["command"]
                 .as_str()
-                .is_some_and(|command| command == "/usr/local/bin/zed-workspace-dock")
+                .is_some_and(|command| command == "/usr/local/bin/zwd")
         }));
     }
 
@@ -206,7 +206,7 @@ mod tests {
         let temp = tempdir().unwrap();
         let tasks_path = temp.path().join("tasks.json");
 
-        install_tasks_at(&tasks_path, Path::new("/usr/local/bin/zed-workspace-dock")).unwrap();
+        install_tasks_at(&tasks_path, Path::new("/usr/local/bin/zwd")).unwrap();
 
         let tasks: Value = serde_json::from_str(&fs::read_to_string(tasks_path).unwrap()).unwrap();
         assert!(tasks.is_array());
@@ -218,7 +218,7 @@ mod tests {
         let tasks_path = temp.path().join("tasks.json");
         fs::write(&tasks_path, r#"{"tasks":[]}"#).unwrap();
 
-        let error = install_tasks_at(&tasks_path, Path::new("/usr/local/bin/zed-workspace-dock"))
+        let error = install_tasks_at(&tasks_path, Path::new("/usr/local/bin/zwd"))
             .unwrap_err()
             .to_string();
 
@@ -227,14 +227,14 @@ mod tests {
 
     #[test]
     fn task_templates_use_zed_file_argument() {
-        let tasks = task_templates(Path::new("/usr/local/bin/zed-workspace-dock")).unwrap();
+        let tasks = task_templates(Path::new("/usr/local/bin/zwd")).unwrap();
 
         assert!(tasks.iter().all(|task| task["args"][1] == "$ZED_FILE"));
     }
 
     #[test]
     fn task_templates_replace_command_placeholder() {
-        let tasks = task_templates(Path::new("/usr/local/bin/zed-workspace-dock")).unwrap();
+        let tasks = task_templates(Path::new("/usr/local/bin/zwd")).unwrap();
         let content = serde_json::to_string(&tasks).unwrap();
 
         assert!(!content.contains(COMMAND_PLACEHOLDER));
@@ -242,9 +242,7 @@ mod tests {
 
     #[test]
     fn is_target_binary_detects_debug_binary_paths() {
-        assert!(is_target_binary(Path::new(
-            "/tmp/project/target/debug/zed-workspace-dock"
-        )));
+        assert!(is_target_binary(Path::new("/tmp/project/target/debug/zwd")));
     }
 
     #[test]
