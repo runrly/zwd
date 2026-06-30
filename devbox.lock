@@ -129,34 +129,6 @@
         }
       }
     },
-    "release-plz@0.3.159": {
-      "last_modified": "2026-06-11T10:33:09Z",
-      "resolved": "github:NixOS/nixpkgs/8c91a71d13451abc40eb9dae8910f972f979852f#release-plz",
-      "source": "devbox-search",
-      "version": "0.3.159",
-      "systems": {
-        "aarch64-linux": {
-          "outputs": [
-            {
-              "name": "out",
-              "path": "/nix/store/yrg548whz2x690spds7msgyhwpxzr692-release-plz-0.3.159",
-              "default": true
-            }
-          ],
-          "store_path": "/nix/store/yrg548whz2x690spds7msgyhwpxzr692-release-plz-0.3.159"
-        },
-        "x86_64-linux": {
-          "outputs": [
-            {
-              "name": "out",
-              "path": "/nix/store/5wqr1ala675a3jjmdmxzg1n9y56p2gg5-release-plz-0.3.159",
-              "default": true
-            }
-          ],
-          "store_path": "/nix/store/5wqr1ala675a3jjmdmxzg1n9y56p2gg5-release-plz-0.3.159"
-        }
-      }
-    },
     "rustup@latest": {
       "last_modified": "2026-05-21T08:15:18Z",
       "plugin_version": "0.0.1",

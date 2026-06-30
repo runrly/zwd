@@ -11,7 +11,7 @@ permissions:
 jobs:
   release-pr:
     name: Release PR
-    if: ${{ !startsWith(github.event.head_commit.message, 'chore: release v') }}
+    if: "${{ !startsWith(github.event.head_commit.message, 'chore: release v') }}"
     runs-on: ubuntu-22.04
     steps:
       - name: Create GitHub App token
@@ -24,19 +24,20 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
-      - name: Install Devbox
-        uses: jetify-com/devbox-install-action@v0.15.0
-        with:
-          enable-cache: true
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
       - name: Run release-plz
+        uses: release-plz/action@v0.5.130
         env:
-          GIT_TOKEN: ${{ steps.app-token.outputs.token }}
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: devbox run -- release-plz release-pr --config release-plz.toml
+        with:
+          command: release-pr
+          config: release-plz.toml
+          version: 0.3.159
 
   release:
     name: Release
-    if: ${{ startsWith(github.event.head_commit.message, 'chore: release v') }}
+    if: "${{ startsWith(github.event.head_commit.message, 'chore: release v') }}"
     runs-on: ubuntu-22.04
     steps:
       - name: Create GitHub App token
@@ -49,12 +50,13 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
-      - name: Install Devbox
-        uses: jetify-com/devbox-install-action@v0.15.0
-        with:
-          enable-cache: true
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
       - name: Run release-plz release
+        uses: release-plz/action@v0.5.130
         env:
-          GIT_TOKEN: ${{ steps.app-token.outputs.token }}
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: devbox run -- release-plz release --config release-plz.toml
+        with:
+          command: release
+          config: release-plz.toml
+          version: 0.3.159
