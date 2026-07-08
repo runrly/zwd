@@ -13,7 +13,7 @@
 
 Rust CLI (`zwd`) for opening multi-project Zed sessions from `.code-workspace` files.
 
-Zed can open multiple folders directly, but its terminal still benefits from a single visible root in some workflows. Zed Workspace Dock can create a marker-protected cache directory where each project folder is linked, then open that dock root in Zed. Running `ls` in the terminal shows the linked projects without copying source code.
+Zed can open multiple folders directly, but its terminal still benefits from a single visible root in some workflows. Zed Workspace Dock can create a lock-protected cache directory where each project folder is linked, then open that dock root in Zed. Running `ls` in the terminal shows the linked projects without copying source code.
 
 [Install](#install) - [Quick start](#quick-start) - [Usage](#usage) - [Workspace files](#workspace-files) - [Development](#development)
 
@@ -26,7 +26,7 @@ Zed can open multiple folders directly, but its terminal still benefits from a s
 - Open a workspace by registered name or by `.code-workspace` path.
 - Choose between direct `folders` mode and managed `symlink` dock mode.
 - Install global Zed tasks backed by the packaged task templates.
-- Rebuild dock roots safely using `.zed-dock.json` ownership markers.
+- Rebuild dock roots safely using `.zwd-lock.json` ownership locks.
 - Use the short `zwd` command for repeated terminal workflows.
 
 ## Install
@@ -165,7 +165,7 @@ Zed Workspace Dock accepts strict JSON `.code-workspace` files:
     { "name": "api", "path": "../api" },
     { "path": "../web" }
   ],
-  "zed-dock": {
+  "zwd": {
     "mode": "symlink"
   }
 }
@@ -176,7 +176,10 @@ Supported modes are:
 - `symlink`: build and open a managed dock root.
 - `folders`: pass resolved project folder paths directly to Zed.
 
-If `zed-dock` exists, `mode` is required. If `folders` is missing, runtime parsing treats it as an empty list.
+If `zwd` exists, `mode` is required. If `folders` is missing, runtime parsing treats it as an empty list.
+
+> [!IMPORTANT]
+> Workspaces from older versions that use `zed-dock` must be migrated manually. Rename the top-level `zed-dock` object to `zwd`, and rename dock files from `.zed-dock.json` to `.zwd-lock.json`.
 
 Registered workspaces are stored under the user config directory at `zwd/workspaces/`. Workspaces created with `--output <dir>` are standalone files in that directory and are opened by path.
 
@@ -187,21 +190,21 @@ The `create` command accepts one or more folder paths as positional arguments. I
 JSON Schemas are published under `resources/schemas/` using JSON Schema Draft 2020-12:
 
 - `resources/schemas/code-workspace.schema.json` describes the `.code-workspace` shape used by this tool.
-- `resources/schemas/zed-dock-marker.schema.json` describes the internal `.zed-dock.json` marker stored inside managed docks.
+- `resources/schemas/zwd-lock.schema.json` describes the internal `.zwd-lock.json` lock stored inside managed docks.
 
 The schemas are documentation, editor, and test resources. Runtime parsing still uses the Rust data model and explicit validation errors.
 
 ## Safety
 
 - Dock directories live under the platform cache directory at `zwd/docks/`.
-- Each managed dock contains `.zed-dock.json`.
-- Rebuilds modify only marker-owned docks.
-- Existing dock directories without a valid marker abort.
-- Unmanaged files inside a marker-owned dock abort.
+- Each managed dock contains `.zwd-lock.json`.
+- Rebuilds modify only lock-owned docks.
+- Existing dock directories without a valid lock abort.
+- Unmanaged files inside a lock-owned dock abort.
 - Project folders are symlinked, not copied.
 - Symlink targets are not deleted or mutated.
 - `folders[].name` must be one filesystem entry name, not a path.
-- `folders[].name` cannot use reserved dock metadata names such as `.zed-dock.json`.
+- `folders[].name` cannot use reserved dock metadata names such as `.zwd-lock.json`.
 - Registered workspace names must be one filesystem entry name without `.code-workspace`; `open` accepts the name with or without that extension.
 - Registered workspace creation does not overwrite an existing workspace unless `--force` is passed.
 
