@@ -41,16 +41,16 @@ impl<'de> Deserialize<'de> for WorkspaceFile {
             #[serde(default)]
             folders: Vec<WorkspaceFolder>,
             zwd: Option<DockConfig>,
-            #[serde(rename = "zed-dock")]
-            legacy_zed_dock: Option<serde_json::Value>,
         }
 
-        let workspace = WorkspaceFileSerde::deserialize(deserializer)?;
-        if workspace.legacy_zed_dock.is_some() {
+        let value = serde_json::Value::deserialize(deserializer)?;
+        if value.get("zed-dock").is_some() {
             return Err(de::Error::custom(
                 r#"legacy workspace field "zed-dock" is no longer supported; rename it to "zwd""#,
             ));
         }
+
+        let workspace = WorkspaceFileSerde::deserialize(value).map_err(de::Error::custom)?;
 
         Ok(Self {
             folders: workspace.folders,
@@ -578,6 +578,17 @@ mod tests {
     fn rejects_legacy_zed_dock_workspace_key() {
         let error = serde_json::from_str::<WorkspaceFile>(
             r#"{"folders":[{"name":"api","path":"../api"}],"zed-dock":{"mode":"symlink"}}"#,
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(error.contains(r#"rename it to "zwd""#));
+    }
+
+    #[test]
+    fn rejects_null_legacy_zed_dock_workspace_key() {
+        let error = serde_json::from_str::<WorkspaceFile>(
+            r#"{"folders":[{"name":"api","path":"../api"}],"zed-dock":null}"#,
         )
         .unwrap_err()
         .to_string();

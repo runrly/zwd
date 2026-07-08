@@ -357,6 +357,29 @@ fn open_rejects_legacy_zed_dock_workspace_key() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
+fn open_rejects_null_legacy_zed_dock_workspace_key() -> Result<(), Box<dyn Error>> {
+    let temp = tempdir()?;
+    let project = temp.path().join("api");
+    fs::create_dir(&project)?;
+    let workspace = temp.path().join("demo.code-workspace");
+    fs::write(
+        &workspace,
+        r#"{
+          "folders": [{ "name": "api", "path": "api" }],
+          "zed-dock": null
+        }"#,
+    )?;
+    let workspace_arg = workspace.to_string_lossy().into_owned();
+
+    let output = run(&["open", &workspace_arg, "--reuse", "--zed-bin", "/bin/echo"])?;
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains(r#"rename it to "zwd""#));
+
+    Ok(())
+}
+
+#[test]
 fn create_rejects_output_file_path() -> Result<(), Box<dyn Error>> {
     let temp = tempdir()?;
     let project = temp.path().join("api");
