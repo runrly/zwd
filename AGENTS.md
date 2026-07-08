@@ -1,6 +1,6 @@
 # Zed Workspace Dock Agent Guide
 
-Zed Workspace Dock is a Rust CLI for creating and opening Zed `.code-workspace` files through either direct folder mode or a marker-protected symlink dock.
+Zed Workspace Dock is a Rust CLI for creating and opening Zed `.code-workspace` files through either direct folder mode or a lock-protected symlink dock.
 
 Use this file as the local operating guide for AI agents working in this repository. Keep changes aligned with the current CLI contract in `README.md`, the project language in `CONTEXT.md`, and the release decisions in `docs/adr/`.
 
@@ -15,7 +15,7 @@ Use this file as the local operating guide for AI agents working in this reposit
 - Commands: `create`, `open`, `install`, and `list`.
 - Default create mode: `symlink`.
 - Alternate open/create mode: `folders`.
-- Workspace format: strict JSON `.code-workspace` files with optional `folders` and optional `zed-dock`.
+- Workspace format: strict JSON `.code-workspace` files with optional `folders` and optional `zwd`.
 - Managed state:
   - Registered workspaces live under the user config directory at `zwd/workspaces/`.
   - Dock roots live under the platform cache directory at `zwd/docks/`.
@@ -30,7 +30,7 @@ Windows support is partial in the MVP: folder mode is supported, while symlink d
 - `src/lib.rs`: command dispatch and public crate entrypoint.
 - `src/cli.rs`: Clap command, flag, and mode definitions.
 - `src/workspace.rs`: workspace creation, parsing, validation, listing, and reference resolution.
-- `src/dock.rs`: symlink dock construction, marker handling, and safety checks.
+- `src/dock.rs`: symlink dock construction, lock handling, and safety checks.
 - `src/install.rs`: global Zed task installation and merge behavior.
 - `src/zed.rs`: Zed process invocation.
 - `src/error.rs`: typed errors used across the CLI.
@@ -94,9 +94,9 @@ If a change affects the Zed UX directly, keep the manual Zed smoke-test gap visi
 
 ## Safety Rules
 
-- Never modify a dock directory unless it has a valid `.zed-dock.json` marker owned by this tool.
-- Abort on existing dock directories without a valid marker.
-- Abort when unmanaged files are present inside a marker-owned dock.
+- Never modify a dock directory unless it has a valid `.zwd-lock.json` lock owned by this tool.
+- Abort on existing dock directories without a valid lock.
+- Abort when unmanaged files are present inside a lock-owned dock.
 - Symlink project folders; do not copy source folders into dock roots.
 - Do not delete or mutate symlink targets.
 - Keep workspace names and dock link names to single filesystem entry names.
@@ -107,7 +107,7 @@ If a change affects the Zed UX directly, keep the manual Zed smoke-test gap visi
 
 - Update `README.md` when public install, usage, workspace, safety, or release behavior changes.
 - Update `CONTEXT.md` when terminology or domain language changes.
-- Add an ADR under `docs/adr/` for decisions that alter release flow, CLI contract, persistence layout, or safety rules.
+- Add an ADR under `docs/adr/` for decisions that alter release flow, CLI contract, persistence layout, or safety rules. ADR files use `adr-NNNN-title-slug.md` with front matter, status, context, decision, consequences, alternatives, implementation notes, and references.
 - Do not add license, changelog, or contributing sections to general docs; those belong in dedicated files.
 - Keep examples current with the simplified create command:
 

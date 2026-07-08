@@ -10,7 +10,7 @@ pub enum AppError {
     Json(#[from] serde_json::Error),
     #[error("MVP only supports .code-workspace files: {path}")]
     UnsupportedWorkspaceExtension { path: PathBuf },
-    #[error(r#""zed-dock.mode" is required when "zed-dock" exists"#)]
+    #[error(r#""zwd.mode" is required when "zwd" exists"#)]
     MissingDockMode,
     #[error("workspace path must have a parent directory")]
     MissingWorkspaceParent,
@@ -54,17 +54,17 @@ pub enum AppError {
     Random(#[from] getrandom::Error),
     #[error("dock path exists and is not a directory: {path}")]
     DockPathNotDirectory { path: PathBuf },
-    #[error("dock exists without marker; refusing to modify: {path}")]
-    DockMissingMarker { path: PathBuf },
-    #[error("unsupported dock marker version: {version}")]
-    UnsupportedDockMarkerVersion { version: u8 },
+    #[error("dock exists without lock; refusing to modify: {path}")]
+    DockMissingLock { path: PathBuf },
+    #[error("unsupported dock lock version: {version}")]
+    UnsupportedDockLockVersion { version: u8 },
     #[error("dock contains unmanaged content: {path}")]
     UnmanagedDockContent { path: PathBuf },
     #[error("managed dock entry is not a symlink: {path}")]
     ManagedDockEntryNotSymlink { path: PathBuf },
-    #[error("dock marker belongs to {marker_workspace_path}, not {workspace_path}")]
+    #[error("dock lock belongs to {lock_workspace_path}, not {workspace_path}")]
     DockWorkspacePathMismatch {
-        marker_workspace_path: PathBuf,
+        lock_workspace_path: PathBuf,
         workspace_path: PathBuf,
     },
     #[error("dock link path already exists: {path}")]

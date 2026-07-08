@@ -17,7 +17,7 @@ _Avoid_: alias, secondary binary name
 _Avoid_: package name as command
 
 **Workspace file**:
-A `.code-workspace` file describing one or more project folders for a Zed session. In the MVP, each workspace file has zero or one `zed-dock` configuration object.
+A `.code-workspace` file describing one or more project folders for a Zed session. In the MVP, each workspace file has zero or one `zwd` configuration object.
 _Avoid_: Project file, session file
 
 **Registered workspace**:
@@ -33,8 +33,12 @@ A standalone workspace file written inside a user-provided output directory via 
 _Avoid_: Local registry, exported registry entry
 
 **Symlink dock**:
-A marker-protected directory whose entries are symbolic links to the projects from a workspace file. One symlink dock belongs to one workspace file path.
+A lock-protected directory whose entries are symbolic links to the projects from a workspace file. One symlink dock belongs to one workspace file path.
 _Avoid_: Temporary copy, workspace copy, virtual workspace
+
+**Dock lock**:
+The JSON ownership record stored as `.zwd-lock.json` inside a symlink dock. A dock lock identifies the owning workspace file and the symlink entries managed by Zed Workspace Dock.
+_Avoid_: Marker, ownership marker, cache manifest
 
 **Dock link name**:
 The single filesystem entry name used for one project link inside a symlink dock. A dock link name is a name, not a path.
@@ -53,7 +57,7 @@ A versioned product resource that defines the Zed task templates Zed Workspace D
 _Avoid_: Generated task file, task config cache
 
 **Schema resource**:
-A JSON Schema Draft 2020-12 document under `resources/schemas/` that documents editor/test validation for either workspace files or dock markers. Schemas are not runtime validators.
+A JSON Schema Draft 2020-12 document under `resources/schemas/` that documents editor/test validation for either workspace files or dock locks. Schemas are not runtime validators.
 _Avoid_: Runtime contract, migration validator
 
 **Release PR**:
@@ -80,7 +84,7 @@ Older planning text may use pluralized product names, describe `zwd` as an alias
 - Created workspaces store folder paths as canonical absolute paths resolved from the current working directory at creation time.
 - `open <simple-name>` prefers a registered workspace over a same-name file or directory in the current working directory. Use an explicit path such as `./work.code-workspace` when the local file is intended.
 - `list` prints registered workspaces as `name<TAB>path`.
-- Workspace schemas document the current parser behavior: `folders` defaults to an empty list when absent, and `zed-dock.mode` is required only when `zed-dock` exists.
+- Workspace schemas document the current parser behavior: `folders` defaults to an empty list when absent, and `zwd.mode` is required only when `zwd` exists.
 
 ## Example Dialogue
 

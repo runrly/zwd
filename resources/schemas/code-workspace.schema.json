@@ -4,6 +4,9 @@
   "title": "Zed Workspace Dock Workspace",
   "description": "Strict JSON .code-workspace document understood by zwd.",
   "type": "object",
+  "not": {
+    "required": ["zed-dock"]
+  },
   "properties": {
     "folders": {
       "type": "array",
@@ -24,7 +27,7 @@
         }
       }
     },
-    "zed-dock": {
+    "zwd": {
       "type": "object",
       "additionalProperties": false,
       "required": ["mode"],
