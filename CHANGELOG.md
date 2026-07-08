@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/runrly/zwd/compare/v0.1.2...v0.2.0) - 2026-07-08
+
+### Added
+
+- [**breaking**] rename dock metadata to zwd lock ([#13](https://github.com/runrly/zwd/pull/13))
+
 ## [0.1.2](https://github.com/runrly/zwd/releases/tag/v0.1.2) - 2026-06-30
 
 ### Added
