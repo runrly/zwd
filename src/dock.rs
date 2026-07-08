@@ -12,11 +12,11 @@ use crate::{
     workspace::ResolvedFolder,
 };
 
-const MARKER_FILE: &str = ".zed-dock.json";
-const MARKER_VERSION: u8 = 1;
+const LOCK_FILE: &str = ".zwd-lock.json";
+const LOCK_VERSION: u8 = 1;
 
 #[derive(Debug, Deserialize, Serialize)]
-struct DockMarker {
+struct DockLock {
     version: u8,
     workspace_path: PathBuf,
     links: Vec<DockLink>,
@@ -50,7 +50,7 @@ pub(crate) fn build_dock_in(
         create_symlink(&folder.target, &dock_root.join(folder.name.as_str()))?;
     }
 
-    write_marker(&dock_root, &workspace_abs, folders)?;
+    write_lock(&dock_root, &workspace_abs, folders)?;
 
     Ok(dock_root)
 }
@@ -67,15 +67,15 @@ fn prepare_dock_dir(dock_root: &Path, workspace_path: &Path) -> Result<()> {
         });
     }
 
-    let marker = read_marker(dock_root)?;
-    if marker.workspace_path != workspace_path {
+    let lock = read_lock(dock_root)?;
+    if lock.workspace_path != workspace_path {
         return Err(AppError::DockWorkspacePathMismatch {
-            marker_workspace_path: marker.workspace_path,
+            lock_workspace_path: lock.workspace_path,
             workspace_path: workspace_path.to_path_buf(),
         });
     }
 
-    let expected_links = marker
+    let expected_links = lock
         .links
         .iter()
         .map(|link| link.name.as_str())
@@ -86,7 +86,7 @@ fn prepare_dock_dir(dock_root: &Path, workspace_path: &Path) -> Result<()> {
         let file_name = entry.file_name();
         let file_name = file_name.to_string_lossy();
 
-        if file_name == MARKER_FILE {
+        if file_name == LOCK_FILE {
             continue;
         }
 
@@ -104,30 +104,30 @@ fn prepare_dock_dir(dock_root: &Path, workspace_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn read_marker(dock_root: &Path) -> Result<DockMarker> {
-    let marker_path = dock_root.join(MARKER_FILE);
+fn read_lock(dock_root: &Path) -> Result<DockLock> {
+    let lock_path = dock_root.join(LOCK_FILE);
 
-    if !marker_path.exists() {
-        return Err(AppError::DockMissingMarker {
+    if !lock_path.exists() {
+        return Err(AppError::DockMissingLock {
             path: dock_root.to_path_buf(),
         });
     }
 
-    let content = fs::read_to_string(marker_path)?;
-    let marker: DockMarker = serde_json::from_str(&content)?;
+    let content = fs::read_to_string(lock_path)?;
+    let lock: DockLock = serde_json::from_str(&content)?;
 
-    if marker.version != MARKER_VERSION {
-        return Err(AppError::UnsupportedDockMarkerVersion {
-            version: marker.version,
+    if lock.version != LOCK_VERSION {
+        return Err(AppError::UnsupportedDockLockVersion {
+            version: lock.version,
         });
     }
 
-    Ok(marker)
+    Ok(lock)
 }
 
-fn write_marker(dock_root: &Path, workspace_path: &Path, folders: &[ResolvedFolder]) -> Result<()> {
-    let marker = DockMarker {
-        version: MARKER_VERSION,
+fn write_lock(dock_root: &Path, workspace_path: &Path, folders: &[ResolvedFolder]) -> Result<()> {
+    let lock = DockLock {
+        version: LOCK_VERSION,
         workspace_path: workspace_path.to_path_buf(),
         links: folders
             .iter()
@@ -137,9 +137,9 @@ fn write_marker(dock_root: &Path, workspace_path: &Path, folders: &[ResolvedFold
             })
             .collect(),
     };
-    let content = serde_json::to_string_pretty(&marker)?;
+    let content = serde_json::to_string_pretty(&lock)?;
 
-    fs::write(dock_root.join(MARKER_FILE), format!("{content}\n"))?;
+    fs::write(dock_root.join(LOCK_FILE), format!("{content}\n"))?;
 
     Ok(())
 }
@@ -250,10 +250,10 @@ mod tests {
     use super::*;
     use crate::workspace::LinkName;
 
-    const MARKER_SCHEMA: &str = include_str!("../resources/schemas/zed-dock-marker.schema.json");
+    const LOCK_SCHEMA: &str = include_str!("../resources/schemas/zwd-lock.schema.json");
 
     #[test]
-    fn builds_dock_with_symlinks_and_marker() {
+    fn builds_dock_with_symlinks_and_lock() {
         let temp = tempdir().unwrap();
         let project = temp.path().join("api");
         fs::create_dir(&project).unwrap();
@@ -270,7 +270,7 @@ mod tests {
         )
         .unwrap();
 
-        assert!(dock_root.join(MARKER_FILE).exists());
+        assert!(dock_root.join(LOCK_FILE).exists());
         assert!(
             dock_root
                 .join("api")
@@ -283,18 +283,18 @@ mod tests {
     }
 
     #[test]
-    fn marker_schema_tracks_current_marker_version() {
-        let schema: Value = serde_json::from_str(MARKER_SCHEMA).unwrap();
+    fn lock_schema_tracks_current_lock_version() {
+        let schema: Value = serde_json::from_str(LOCK_SCHEMA).unwrap();
 
         assert_eq!(
             schema["$schema"],
             "https://json-schema.org/draft/2020-12/schema"
         );
-        assert_eq!(schema["properties"]["version"]["const"], MARKER_VERSION);
+        assert_eq!(schema["properties"]["version"]["const"], LOCK_VERSION);
     }
 
     #[test]
-    fn generated_marker_matches_published_schema_shape() {
+    fn generated_lock_matches_published_schema_shape() {
         let temp = tempdir().unwrap();
         let project = temp.path().join("api");
         fs::create_dir(&project).unwrap();
@@ -310,17 +310,16 @@ mod tests {
             }],
         )
         .unwrap();
-        let marker: Value =
-            serde_json::from_str(&fs::read_to_string(dock_root.join(MARKER_FILE)).unwrap())
-                .unwrap();
-        let marker = marker.as_object().expect("marker must be a JSON object");
-        let links = marker["links"].as_array().expect("links must be an array");
+        let lock: Value =
+            serde_json::from_str(&fs::read_to_string(dock_root.join(LOCK_FILE)).unwrap()).unwrap();
+        let lock = lock.as_object().expect("lock must be a JSON object");
+        let links = lock["links"].as_array().expect("links must be an array");
         let first_link = links[0].as_object().expect("link must be a JSON object");
 
-        assert_eq!(marker.len(), 3);
-        assert_eq!(marker["version"], MARKER_VERSION);
+        assert_eq!(lock.len(), 3);
+        assert_eq!(lock["version"], LOCK_VERSION);
         assert!(
-            marker["workspace_path"]
+            lock["workspace_path"]
                 .as_str()
                 .is_some_and(|path| !path.is_empty())
         );
@@ -356,7 +355,7 @@ mod tests {
     }
 
     #[test]
-    fn aborts_when_marker_belongs_to_another_workspace() {
+    fn aborts_when_lock_belongs_to_another_workspace() {
         let temp = tempdir().unwrap();
         let project = temp.path().join("api");
         fs::create_dir(&project).unwrap();
@@ -369,14 +368,14 @@ mod tests {
             target: project.clone(),
         }];
         let dock_root = build_dock_in(temp.path(), &workspace, &folders).unwrap();
-        let marker = serde_json::json!({
-            "version": MARKER_VERSION,
+        let lock = serde_json::json!({
+            "version": LOCK_VERSION,
             "workspace_path": other_workspace.canonicalize().unwrap(),
             "links": [{ "name": "api", "target": project }]
         });
         fs::write(
-            dock_root.join(MARKER_FILE),
-            format!("{}\n", serde_json::to_string_pretty(&marker).unwrap()),
+            dock_root.join(LOCK_FILE),
+            format!("{}\n", serde_json::to_string_pretty(&lock).unwrap()),
         )
         .unwrap();
 
@@ -384,11 +383,11 @@ mod tests {
             .unwrap_err()
             .to_string();
 
-        assert!(error.contains("dock marker belongs"));
+        assert!(error.contains("dock lock belongs"));
     }
 
     #[test]
-    fn aborts_when_dock_exists_without_marker() {
+    fn aborts_when_dock_exists_without_lock() {
         let temp = tempdir().unwrap();
         let project = temp.path().join("api");
         fs::create_dir(&project).unwrap();
@@ -412,11 +411,11 @@ mod tests {
         .unwrap_err()
         .to_string();
 
-        assert!(error.contains("without marker"));
+        assert!(error.contains("without lock"));
     }
 
     #[test]
-    fn aborts_when_marker_owned_dock_has_unmanaged_content() {
+    fn aborts_when_lock_owned_dock_has_unmanaged_content() {
         let temp = tempdir().unwrap();
         let project = temp.path().join("api");
         fs::create_dir(&project).unwrap();

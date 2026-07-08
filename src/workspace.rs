@@ -5,7 +5,7 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de};
 
 use crate::{
     cli::Mode,
@@ -13,22 +13,50 @@ use crate::{
 };
 
 const APP_DIR: &str = "zwd";
-const RESERVED_DOCK_METADATA_NAMES: [&str; 1] = [".zed-dock.json"];
+const RESERVED_DOCK_METADATA_NAMES: [&str; 1] = [".zwd-lock.json"];
 const WORKSPACE_EXTENSION: &str = "code-workspace";
 const WORKSPACES_DIR: &str = "workspaces";
 const GENERATED_NAME_ATTEMPTS: usize = 16;
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct WorkspaceFile {
     #[serde(default)]
     folders: Vec<WorkspaceFolder>,
-    #[serde(rename = "zed-dock", skip_serializing_if = "Option::is_none")]
-    zed_dock: Option<DockConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    zwd: Option<DockConfig>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 struct DockConfig {
     mode: Option<Mode>,
+}
+
+impl<'de> Deserialize<'de> for WorkspaceFile {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct WorkspaceFileSerde {
+            #[serde(default)]
+            folders: Vec<WorkspaceFolder>,
+            zwd: Option<DockConfig>,
+            #[serde(rename = "zed-dock")]
+            legacy_zed_dock: Option<serde_json::Value>,
+        }
+
+        let workspace = WorkspaceFileSerde::deserialize(deserializer)?;
+        if workspace.legacy_zed_dock.is_some() {
+            return Err(de::Error::custom(
+                r#"legacy workspace field "zed-dock" is no longer supported; rename it to "zwd""#,
+            ));
+        }
+
+        Ok(Self {
+            folders: workspace.folders,
+            zwd: workspace.zwd,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -225,7 +253,7 @@ fn validate_dock_link_names(folders: &[WorkspaceFolder]) -> Result<()> {
 fn write_workspace_document(output: &Path, mode: Mode, folders: &[WorkspaceFolder]) -> Result<()> {
     let workspace = WorkspaceFile {
         folders: folders.to_vec(),
-        zed_dock: Some(DockConfig { mode: Some(mode) }),
+        zwd: Some(DockConfig { mode: Some(mode) }),
     };
 
     let content = serde_json::to_string_pretty(&workspace)?;
@@ -343,7 +371,7 @@ impl WorkspaceFile {
             return Ok(mode);
         }
 
-        match &self.zed_dock {
+        match &self.zwd {
             Some(config) => config.mode.ok_or(AppError::MissingDockMode),
             None => Ok(Mode::Folders),
         }
@@ -539,11 +567,22 @@ mod tests {
     #[test]
     fn parses_workspace_with_dock_mode() {
         let workspace: WorkspaceFile = serde_json::from_str(
-            r#"{"folders":[{"name":"api","path":"../api"}],"zed-dock":{"mode":"symlink"}}"#,
+            r#"{"folders":[{"name":"api","path":"../api"}],"zwd":{"mode":"symlink"}}"#,
         )
         .unwrap();
 
         assert_eq!(workspace.open_mode(None).unwrap(), Mode::Symlink);
+    }
+
+    #[test]
+    fn rejects_legacy_zed_dock_workspace_key() {
+        let error = serde_json::from_str::<WorkspaceFile>(
+            r#"{"folders":[{"name":"api","path":"../api"}],"zed-dock":{"mode":"symlink"}}"#,
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(error.contains(r#"rename it to "zwd""#));
     }
 
     #[test]
@@ -559,7 +598,12 @@ mod tests {
             "schema must match runtime parser, which defaults missing folders to []"
         );
         assert_eq!(
-            schema["properties"]["zed-dock"]["properties"]["mode"]["enum"],
+            schema["not"]["required"],
+            serde_json::json!(["zed-dock"]),
+            "schema must reject the legacy workspace config key"
+        );
+        assert_eq!(
+            schema["properties"]["zwd"]["properties"]["mode"]["enum"],
             serde_json::json!(["folders", "symlink"])
         );
     }
@@ -577,12 +621,11 @@ mod tests {
 
     #[test]
     fn rejects_missing_mode_when_dock_config_exists() {
-        let workspace: WorkspaceFile =
-            serde_json::from_str(r#"{"folders":[],"zed-dock":{}}"#).unwrap();
+        let workspace: WorkspaceFile = serde_json::from_str(r#"{"folders":[],"zwd":{}}"#).unwrap();
 
         let error = workspace.open_mode(None).unwrap_err().to_string();
 
-        assert!(error.contains("zed-dock.mode"));
+        assert!(error.contains("zwd.mode"));
     }
 
     #[test]
@@ -858,15 +901,15 @@ mod tests {
     }
 
     #[test]
-    fn rejects_marker_link_name() {
-        let error = LinkName::new(".zed-dock.json").unwrap_err().to_string();
+    fn rejects_lock_link_name() {
+        let error = LinkName::new(".zwd-lock.json").unwrap_err().to_string();
 
         assert!(error.contains("reserved dock metadata name"));
     }
 
     #[test]
-    fn rejects_marker_link_name_case_insensitively() {
-        let error = LinkName::new(".ZED-DOCK.JSON").unwrap_err().to_string();
+    fn rejects_lock_link_name_case_insensitively() {
+        let error = LinkName::new(".ZWD-LOCK.JSON").unwrap_err().to_string();
 
         assert!(error.contains("reserved dock metadata name"));
     }

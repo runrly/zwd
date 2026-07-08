@@ -81,7 +81,7 @@ fn create_writes_code_workspace_with_dock_config() -> Result<(), Box<dyn Error>>
     let workspace = output_dir.join("demo.code-workspace");
     let document: Value = serde_json::from_str(&fs::read_to_string(&workspace)?)?;
 
-    assert_eq!(document["zed-dock"]["mode"], "symlink");
+    assert_eq!(document["zwd"]["mode"], "symlink");
     assert!(document["folders"][0].get("name").is_none());
     assert_eq!(
         document["folders"][0]["path"],
@@ -126,7 +126,7 @@ fn create_without_name_registers_generated_workspace_and_prints_path() -> Result
 
     assert!(file_name.starts_with("ws-"));
     assert!(file_name.ends_with(".code-workspace"));
-    assert_eq!(document["zed-dock"]["mode"], "symlink");
+    assert_eq!(document["zwd"]["mode"], "symlink");
     assert_eq!(
         document["folders"][0]["path"],
         api.canonicalize()?.to_string_lossy().into_owned()
@@ -290,7 +290,7 @@ fn open_folders_mode_invokes_zed_binary_with_resolved_folder() -> Result<(), Box
         &workspace,
         r#"{
           "folders": [{ "name": "api", "path": "api" }],
-          "zed-dock": { "mode": "folders" }
+          "zwd": { "mode": "folders" }
         }"#,
     )?;
     let workspace_arg = workspace.to_string_lossy().into_owned();
@@ -329,6 +329,29 @@ fn open_rejects_non_code_workspace_input() -> Result<(), Box<dyn Error>> {
 
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains(".code-workspace"));
+
+    Ok(())
+}
+
+#[test]
+fn open_rejects_legacy_zed_dock_workspace_key() -> Result<(), Box<dyn Error>> {
+    let temp = tempdir()?;
+    let project = temp.path().join("api");
+    fs::create_dir(&project)?;
+    let workspace = temp.path().join("demo.code-workspace");
+    fs::write(
+        &workspace,
+        r#"{
+          "folders": [{ "name": "api", "path": "api" }],
+          "zed-dock": { "mode": "symlink" }
+        }"#,
+    )?;
+    let workspace_arg = workspace.to_string_lossy().into_owned();
+
+    let output = run(&["open", &workspace_arg, "--reuse", "--zed-bin", "/bin/echo"])?;
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains(r#"rename it to "zwd""#));
 
     Ok(())
 }
@@ -451,7 +474,7 @@ fn open_rejects_parent_dir_link_name_before_launching_zed() -> Result<(), Box<dy
         &workspace,
         r#"{
           "folders": [{ "name": "../x", "path": "api" }],
-          "zed-dock": { "mode": "symlink" }
+          "zwd": { "mode": "symlink" }
         }"#,
     )?;
     let workspace_arg = workspace.to_string_lossy().into_owned();
@@ -482,7 +505,7 @@ fn open_folders_mode_allows_invalid_link_name() -> Result<(), Box<dyn Error>> {
         &workspace,
         r#"{
           "folders": [{ "name": "../x", "path": "api" }],
-          "zed-dock": { "mode": "folders" }
+          "zwd": { "mode": "folders" }
         }"#,
     )?;
     let workspace_arg = workspace.to_string_lossy().into_owned();
@@ -536,7 +559,7 @@ fn install_writes_root_array_from_resource() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
-fn open_symlink_mode_rejects_marker_link_name_before_launching_zed() -> Result<(), Box<dyn Error>> {
+fn open_symlink_mode_rejects_lock_link_name_before_launching_zed() -> Result<(), Box<dyn Error>> {
     let temp = tempdir()?;
     let project = temp.path().join("api");
     fs::create_dir(&project)?;
@@ -544,8 +567,8 @@ fn open_symlink_mode_rejects_marker_link_name_before_launching_zed() -> Result<(
     fs::write(
         &workspace,
         r#"{
-          "folders": [{ "name": ".zed-dock.json", "path": "api" }],
-          "zed-dock": { "mode": "symlink" }
+          "folders": [{ "name": ".zwd-lock.json", "path": "api" }],
+          "zwd": { "mode": "symlink" }
         }"#,
     )?;
     let workspace_arg = workspace.to_string_lossy().into_owned();
@@ -582,7 +605,7 @@ fn open_symlink_rejects_case_insensitive_duplicate_links_before_zed() -> Result<
             { "name": "api", "path": "api" },
             { "name": "API", "path": "web" }
           ],
-          "zed-dock": { "mode": "symlink" }
+          "zwd": { "mode": "symlink" }
         }"#,
     )?;
     let workspace_arg = workspace.to_string_lossy().into_owned();

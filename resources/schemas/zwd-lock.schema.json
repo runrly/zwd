@@ -1,14 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://zwd.local/schemas/zed-dock-marker.schema.json",
-  "title": "Zed Workspace Dock Marker",
-  "description": "Marker file stored as .zed-dock.json inside a managed symlink dock.",
+  "$id": "https://zwd.local/schemas/zwd-lock.schema.json",
+  "title": "Zed Workspace Dock Lock",
+  "description": "Lock file stored as .zwd-lock.json inside a managed symlink dock.",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "workspace_path", "links"],
   "properties": {
     "version": {
-      "description": "Marker format version supported by this binary.",
+      "description": "Lock format version supported by this binary.",
       "type": "integer",
       "const": 1
     },
