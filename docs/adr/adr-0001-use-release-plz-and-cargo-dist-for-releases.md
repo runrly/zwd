@@ -1,18 +1,18 @@
 ---
 title: "ADR-0001: Use release-plz and cargo-dist for releases"
-status: "Accepted"
+status: "Superseded"
 date: "2026-06-24"
 authors: "Project maintainer"
 tags: ["architecture", "release", "automation"]
 supersedes: ""
-superseded_by: ""
+superseded_by: "ADR-0007"
 ---
 
 # ADR-0001: Use release-plz and cargo-dist for releases
 
 ## Status
 
-Accepted
+Superseded by ADR-0007.
 
 ## Context
 

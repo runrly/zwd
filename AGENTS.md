@@ -37,7 +37,7 @@ Windows support is partial in the MVP: folder mode is supported, while symlink d
 - `tests/cli.rs`: integration coverage for user-visible CLI behavior.
 - `resources/`: task templates and JSON Schemas.
 - `docs/adr/`: accepted project decisions.
-- `release-plz.toml`, `dist-workspace.toml`, `.github/workflows/`: release automation.
+- `release-plz.toml`, `dist-workspace.toml`, `.github/workflows/`, `.github/scripts/`: release automation.
 
 ## Development Commands
 
@@ -124,8 +124,8 @@ This project uses Release PRs:
 
 1. Feature and fix commits merge into `main`.
 2. `release-plz` opens or updates a Release PR.
-3. Merging the Release PR creates the version tag.
-4. `cargo-dist` builds release archives, installers, checksums, attestations, and the GitHub Release.
+3. Merging the Release PR creates a signed version tag.
+4. A maintainer manually dispatches Release for that tag; the protected `release-publication` environment approves it before `cargo-dist` builds release archives, installers, checksums, attestations, and the GitHub Release.
 
 The package is currently `publish = false`; release artifacts are GitHub Release assets, not crates.io publishing.
 

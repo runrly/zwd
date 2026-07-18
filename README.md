@@ -251,9 +251,13 @@ This project uses Release PRs:
 
 1. Merge feature and fix PRs into `main`.
 2. `release-plz` opens or updates a Release PR with the next version and changelog.
-3. Merge the Release PR.
-4. `release-plz` creates the `vX.Y.Z` tag.
-5. `cargo-dist` builds release artifacts, installers, checksums, attestations, and the GitHub Release.
+3. Merge the Release PR; automation creates the signed `vX.Y.Z` tag.
+4. A maintainer manually dispatches the Release workflow for that tag.
+5. The protected `release-publication` environment requires approval before `cargo-dist` builds release archives, installers, checksums, attestations, and the GitHub Release.
+
+To publish a tag, open **Actions → Release → Run workflow**, select `main`, and enter its `vX.Y.Z` tag. Then approve the `release-publication` environment.
+
+Before the first release, configure the `release-signing` environment with the `RUNRLY_ECHO_SIGNING_PRIVATE_KEY` secret. Register the matching public key as an SSH signing key on the maintainer's GitHub account, where `echo@runrly.dev` is a verified email. Release tags use the identity `runrly-echo <echo@runrly.dev>`; the private key is not available to the manual publication workflow.
 
 Versioning follows CLI SemVer. The package is currently `publish = false`, so distribution is through GitHub Release artifacts rather than crates.io.
 
