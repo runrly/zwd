@@ -4,7 +4,19 @@ git_release_enable = false
 git_tag_name = "v{{ version }}"
 pr_branch_prefix = "release-plz-"
 pr_labels = ["release"]
-pr_name = "chore: release v{{ version }}"
+pr_name = "release: version {{ package }}"
+pr_body = """
+This PR was opened by the [zwd release automation](https://github.com/runrly/zwd/actions/workflows/release-plz.yml). When you're ready to create a release tag, merge this PR. The GitHub Release is then published manually by an approved maintainer.
+
+If you're not ready to do a release yet, that's fine. Whenever more versionable changes merge into `main`, this PR is updated.
+
+# Releases
+{% for release in releases %}
+## {{ release.package }}@{{ release.next_version }}
+
+{% if release.changelog %}{{ release.changelog }}{% endif %}
+{% endfor -%}
+"""
 release_always = false
 release_commits = "^(feat|fix|perf|refactor)(\\(.+\\))?!?:|^(build|ci)\\((release|dist|install|deps)\\)!?:|^revert:"
 repo_url = "https://github.com/runrly/zwd"
@@ -12,5 +24,31 @@ semver_check = false
 features_always_increment_minor = true
 
 [changelog]
+header = "# Changelog\n"
+body = """
+## {{ version }}
+
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group }}
+
+{% for commit in commits %}
+- {{ commit.id | truncate(length=10, end="") }}: {{ commit.message }}
+{% endfor %}
+{% endfor %}
+"""
+trim = true
 protect_breaking_commits = true
 tag_pattern = "v[0-9]*"
+sort_commits = "oldest"
+commit_preprocessors = [
+  { pattern = "\\s*\\(#([0-9]+)\\)$", replace = "" },
+]
+commit_parsers = [
+  { message = "^[^:]+!:", group = "Major Changes" },
+  { message = "^[^:]+\\([^)]*\\)!:", group = "Major Changes" },
+  { message = "^feat", group = "Minor Changes" },
+  { message = "^(fix|perf|refactor|security)(\\(.+\\))?!?:", group = "Patch Changes" },
+  { message = "^(build|ci)\\((release|dist|install|deps)\\)!?:", group = "Patch Changes" },
+  { message = "^revert:", group = "Patch Changes" },
+  { message = "^.*", skip = true },
+]

@@ -5,14 +5,45 @@ on:
     branches:
       - main
 
+concurrency:
+  group: release-pr-main
+  cancel-in-progress: false
+
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
+  classify-merge:
+    name: Classify main push
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    outputs:
+      is-release-pr: ${{ steps.classify.outputs.is-release-pr }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - id: classify
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_pr="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" \
+            --jq '[.[] | select(
+                .merged_at != null
+                and .base.ref == "main"
+                and (.head.ref | startswith("release-plz-"))
+                and .head.repo.full_name == "runrly/zwd"
+                and .user.login == "runrly-echo[bot]"
+              )] | length')"
+          echo "is-release-pr=$([[ "$release_pr" -gt 0 ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
   release-pr:
     name: Release PR
-    if: "${{ !startsWith(github.event.head_commit.message, 'chore: release v') }}"
+    needs: classify-merge
+    if: ${{ needs.classify-merge.outputs.is-release-pr != 'true' }}
     runs-on: ubuntu-22.04
+    timeout-minutes: 15
     steps:
       - name: Create GitHub App token
         id: app-token
@@ -35,10 +66,13 @@ jobs:
           config: release-plz.toml
           version: 0.3.159
 
-  release:
-    name: Tag release
-    if: "${{ startsWith(github.event.head_commit.message, 'chore: release v') }}"
+  tag-release:
+    name: Create signed release tag
+    needs: classify-merge
+    if: ${{ needs.classify-merge.outputs.is-release-pr == 'true' }}
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    environment: release-signing
     steps:
       - name: Create GitHub App token
         id: app-token
@@ -52,13 +86,8 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-      - name: Create release tag
+      - name: Create and verify SSH-signed tag
+        shell: bash
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: |
-          version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "zwd") | .version')"
-          tag="v${version}"
-          git config user.name "runrly-echo[bot]"
-          git config user.email "runrly-echo[bot]@users.noreply.github.com"
-          git tag "${tag}"
-          git push origin "${tag}"
+          RUNRLY_ECHO_SIGNING_PRIVATE_KEY: ${{ secrets.RUNRLY_ECHO_SIGNING_PRIVATE_KEY }}
+        run: .github/scripts/create-signed-release-tag.sh

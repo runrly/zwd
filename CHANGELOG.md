@@ -1,57 +1,28 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+## 0.2.0
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+### Major Changes
 
-## [Unreleased]
+- b6e2f37953: rename dock metadata to zwd lock
 
-## [0.2.0](https://github.com/runrly/zwd/compare/v0.1.2...v0.2.0) - 2026-07-08
+## 0.1.2
 
-### Added
+### Major Changes
 
-- [**breaking**] rename dock metadata to zwd lock ([#13](https://github.com/runrly/zwd/pull/13))
+- 20531cfbbd: simplify workspace creation command
 
-## [0.1.2](https://github.com/runrly/zwd/releases/tag/v0.1.2) - 2026-06-30
+### Minor Changes
 
-### Added
+- 261be6b3de: implement workspace dock MVP
+- 4b7dd8131a: use zwd as public command
+- 09886ad80e: add zwd binary alias
 
-- *(cli)* use zwd as public command
-- add zwd binary alias
-- [**breaking**] simplify workspace creation command
-- implement workspace dock MVP
+### Patch Changes
 
-### Fixed
-
-- *(release)* tag release pr merges
-- *(release)* enable git release creation
-- *(windows)* support symlink dock mode
-
-### Other
-
-- release v0.1.1 ([#11](https://github.com/runrly/zwd/pull/11))
-- release v0.1.1 ([#10](https://github.com/runrly/zwd/pull/10))
-- use zwd as package and state namespace
-- *(release)* run release-plz through action
-- *(release)* publish after release PR merge
-- release v0.1.1 ([#9](https://github.com/runrly/zwd/pull/9))
-- *(release)* restrict release commit triggers
-- *(readme)* show release badge
-- run release-plz through devbox
-- bump create-github-app-token
-- *(readme)* fix shieldcn badge rendering
-- prepare public repository security
-- *(readme)* use banner header size
-- *(readme)* document devbox workflow
-- *(readme)* add shieldcn header
-- add codegraph marker
-- run validation workflows through devbox
-- update `devbox` schema
-- improve readme
-- update agent guide
-- add repository agent guidelines
-- rename release app secrets
-- add release automation
-- add MIT license
-- initialize rust dev environment
+- c0ad173b5a: support symlink dock mode
+- cb12331568: enable git release creation
+- e8bfe5b83e: tag release PR merges
+- 6a5bed2705: use zwd as package and state namespace
+- 28e4b7bccc: run release-plz through action
+- 75c3a94d11: publish after release PR merge
