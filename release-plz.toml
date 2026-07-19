@@ -28,12 +28,12 @@ header = "# Changelog\n"
 body = """
 ## {{ version }}
 
-{% for group, commits in commits | group_by(attribute="group") %}
+{% for group, commits in commits | group_by(attribute="group") -%}
 ### {{ group }}
 
-{% for commit in commits %}
+{% for commit in commits -%}
 - {{ commit.id | truncate(length=10, end="") }}: {{ commit.message }}
-{% endfor %}
+{% endfor -%}
 {% endfor %}
 """
 trim = true
