@@ -263,9 +263,10 @@ Versioning follows CLI SemVer. The package is currently `publish = false`, so di
 
 ## References
 
-This project is a from-scratch Rust study project informed by:
+This project was informed by:
 
 - [`fu5ha/zed-workspaces`](https://github.com/fu5ha/zed-workspaces)
 - [`artumont/zed-workspaces`](https://github.com/artumont/zed-workspaces)
+- [Zed issue #9459: support opening `.code-workspace` files in the editor](https://github.com/zed-industries/zed/issues/9459)
 
 No source code from those projects is copied here. If that changes later, keep the required license notices with the copied code.
