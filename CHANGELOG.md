@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.1
+
+### Patch Changes
+
+- d2f63d3913: add signed tags and manual publication
+- d34a1a5910: fix release pr validation
+
 ## 0.2.0
 
 ### Major Changes
