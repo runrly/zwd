@@ -2,7 +2,7 @@
 git_only = true
 git_release_enable = false
 git_tag_name = "v{{ version }}"
-pr_branch_prefix = "release-plz-"
+pr_branch_prefix = "release-plz/"
 pr_labels = ["release"]
 pr_name = "release: version {{ package }}"
 pr_body = """
