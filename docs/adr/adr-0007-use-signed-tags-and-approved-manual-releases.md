@@ -54,8 +54,8 @@ The signing key is isolated in the `release-signing` environment, restricted to 
 - **IMP-001**: Only the Runrly Echo App bypasses the `v*` tag ruleset.
 - **IMP-002**: `release` validates tag existence, annotation, GitHub signature verification, version, and `main` ancestry before cargo-dist runs.
 - **IMP-003**: The public signing key is registered on the maintainer GitHub account as an SSH signing key.
-- **IMP-004**: Only the Runrly Echo App bypasses the `release-plz-*` branch ruleset.
-- **IMP-005**: Before the signing environment is reached, the main-push classifier requires a merged `main` PR from `runrly/zwd`, on a `release-plz-*` branch, authored by `runrly-echo[bot]`.
+- **IMP-004**: As refined by ADR-0008, only the Runrly Echo App bypasses the `release-plz/main` branch ruleset.
+- **IMP-005**: As refined by ADR-0008, before the signing environment is reached, the main-push classifier requires a merged `main` PR from `runrly/zwd`, on `release-plz/main`, authored by `runrly-echo[bot]`.
 
 ## References
 

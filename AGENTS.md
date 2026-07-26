@@ -123,7 +123,7 @@ Avoid the removed `--folder name=path` create syntax.
 This project uses Release PRs:
 
 1. Feature and fix commits merge into `main`.
-2. `release-plz` opens or updates a Release PR.
+2. `release-plz` opens or updates the sole Release PR on `release-plz/main`.
 3. Merging the Release PR creates a signed version tag.
 4. A maintainer manually dispatches Release for that tag; the protected `release-publication` environment approves it before `cargo-dist` builds release archives, installers, checksums, attestations, and the GitHub Release.
 

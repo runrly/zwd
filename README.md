@@ -250,7 +250,7 @@ The release binary is written to `target/release/zwd`.
 This project uses Release PRs:
 
 1. Merge feature and fix PRs into `main`.
-2. `release-plz` opens or updates a Release PR with the next version and changelog.
+2. `release-plz` opens or updates the sole Release PR on `release-plz/main` with the next version and changelog.
 3. Merge the Release PR; automation creates the signed `vX.Y.Z` tag.
 4. A maintainer manually dispatches the Release workflow for that tag.
 5. The protected `release-publication` environment requires approval before `cargo-dist` builds release archives, installers, checksums, attestations, and the GitHub Release.

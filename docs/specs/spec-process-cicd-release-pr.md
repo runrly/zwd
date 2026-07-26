@@ -1,8 +1,8 @@
 ---
 title: CI/CD Workflow Specification - Release PR and Signed Tag
-version: 1.3
+version: 1.5
 date_created: 2026-07-18
-last_updated: 2026-07-18
+last_updated: 2026-07-26
 owner: Zed Workspace Dock maintainers
 tags: [process, cicd, github-actions, release, signing]
 ---
@@ -20,6 +20,7 @@ graph TD
     A[Push to main] --> B[Classify merged PR]
     B --> C{Release PR merge?}
     C -->|No| D[Create or update Release PR]
+    D --> P[Promote to release-plz/main]
     C -->|Yes| E[Obtain App authority]
     E --> F[Create and verify signed tag]
     F --> G[Immutable version tag]
@@ -32,7 +33,7 @@ graph TD
 | Job | Purpose | Dependencies | Execution context |
 |---|---|---|---|
 | Classify merge | Determine whether the pushed commit merged a release-plz Release PR. | Trigger | Hosted Linux runner |
-| Release PR | Reconcile the version-and-changelog PR for versionable changes. | Classification: ordinary merge | Hosted Linux runner, GitHub App authority |
+| Release PR | Reconcile the version-and-changelog PR and promote its head to `release-plz/main`. | Classification: ordinary merge | Hosted Linux runner, GitHub App authority |
 | Signed tag | Create and locally verify the next annotated version tag. | Classification: Release PR merge | Hosted Linux runner, `release-signing` environment, GitHub App authority |
 
 ## Requirements Matrix
@@ -41,10 +42,11 @@ graph TD
 
 | ID | Requirement | Priority | Acceptance criteria |
 |---|---|---|---|
-| REQ-001 | Ordinary merges reconcile one Release PR. | High | The pending PR contains the next version and generated changelog. |
+| REQ-001 | Ordinary merges reconcile one Release PR on `release-plz/main`. | High | The pending PR contains the next version and generated changelog, and its head is the canonical release branch. |
 | REQ-002 | A merged Release PR creates exactly one matching version tag. | High | A new annotated `vX.Y.Z` tag points to the merge commit. |
 | REQ-003 | Non-release merges never create a tag. | High | They only enter the Release PR reconciliation path. |
 | REQ-004 | Existing tags are never replaced. | High | A duplicate tag stops the run without pushing a ref. |
+| REQ-005 | Timestamped staging branches do not persist. | High | A successful reconciliation leaves only `release-plz/main` as the release branch. |
 
 ### Security Requirements
 
@@ -54,6 +56,7 @@ graph TD
 | SEC-002 | The private signing key is isolated. | Only the signed-tag job accesses `release-signing`. |
 | SEC-003 | Tags are attributable and verifiable. | The tag is annotated, SSH-signed, and verified before push. |
 | SEC-004 | Release tags are immutable. | The repository ruleset permits creation only by the release App and blocks updates/deletions. |
+| SEC-005 | Only the canonical Release PR can authorize signing. | The classifier requires the exact head ref `release-plz/main`; a staging ref never reaches `release-signing`. |
 
 ## Input/Output Contracts
 
@@ -70,14 +73,15 @@ graph TD
 
 | Output | Description |
 |---|---|
-| Release PR | A single open PR containing a version bump and changelog when versionable changes exist. |
+| Release PR | A single open PR on `release-plz/main` containing a version bump and changelog when versionable changes exist. |
 | Signed tag | An immutable annotated tag whose version matches the Cargo package. |
 
 ## Execution Constraints
 
 - Hosted Linux runners must provide Git, Cargo metadata support, SSH signing support, and GitHub API access.
 - The release App requires repository write authority; the classifier requires read-only pull-request metadata.
-- A Release PR is trusted only when it is merged into the current base branch, originates in this repository, uses the reserved `release-plz-` prefix, and is authored by `runrly-echo[bot]`.
+- A Release PR is trusted only when it is merged into the current base branch, originates in this repository, uses the exact `release-plz/main` head ref, and is authored by `runrly-echo[bot]`.
+- `release-plz` may create a `release-plz/<timestamp>` staging branch. The workflow validates it, promotes it to the canonical branch, and restores the previous canonical ref if promotion fails.
 - A valid public signing key must be registered with the maintainer GitHub account before the first tag.
 - Main-push executions are queued rather than cancelled, so a merged Release PR is never superseded by a later push.
 
@@ -89,6 +93,7 @@ graph TD
 | Missing signing secret | Fail before tag creation. | Configure `release-signing`; rerun after correcting it. |
 | Existing tag | Fail without mutating refs. | Investigate the prior release; never force-push. |
 | Invalid signature | Fail before push. | Rotate/correct the signing key and rerun. |
+| Branch promotion failure | Restore the previous canonical branch, retain the staging branch, and fail. | Inspect the retained staging branch, correct the API/ruleset issue, then rerun deliberately. |
 
 ## Quality Gates
 
@@ -110,11 +115,13 @@ graph TD
 
 - [Manual Release Publication](spec-process-cicd-release-publication.md)
 - [ADR-0007](../adr/adr-0007-use-signed-tags-and-approved-manual-releases.md)
+- [ADR-0008](../adr/adr-0008-use-persistent-release-pr-branch.md)
 
 ## Version History
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.5 | 2026-07-26 | Defined `release-plz/main`, staged promotion, and recovery. |
 | 1.4 | 2026-07-18 | Required same-repository Runrly Echo bot authorship before signing a tag. |
 | 1.3 | 2026-07-18 | Renamed the signing environment to release-signing. |
 | 1.2 | 2026-07-18 | Defined the Runrly Echo tagger identity and signing secret. |
