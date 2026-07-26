@@ -4,7 +4,6 @@ set -euo pipefail
 readonly REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly PROMOTE_SCRIPT="$REPO_ROOT/.github/scripts/promote-release-pr-branch.sh"
 readonly FAKE_GH="$REPO_ROOT/tests/fixtures/fake-gh.sh"
-readonly FAKE_JQ="$REPO_ROOT/tests/fixtures/fake-jq.sh"
 readonly STAGING_BRANCH="release-plz/2026-07-26T00-00-00Z"
 
 fail() {
@@ -29,7 +28,6 @@ run_promotion() {
     GITHUB_REPOSITORY="runrly/zwd" \
     GH_TOKEN="test-token" \
     GH_BIN="$FAKE_GH" \
-    JQ_BIN="$FAKE_JQ" \
     FAKE_GH_STATE="$state_dir" \
     RELEASE_PR_JSON="$release_pr_json" \
     bash "$PROMOTE_SCRIPT"
@@ -88,7 +86,25 @@ test_rename_failure_restores_previous_canonical_branch() {
   assert_file_equals "staging-sha" "$state_dir/staging"
 }
 
+test_release_pr_number_must_be_a_positive_integer() {
+  local state_dir release_pr_json
+  state_dir="$(new_state "release-plz/main" "canonical-sha" "")"
+  trap 'rm -rf "$state_dir"' RETURN
+
+  for release_pr_json in \
+    '{"number":"42","head_branch":"release-plz/main"}' \
+    '{"number":42.5,"head_branch":"release-plz/main"}' \
+    '{"number":0,"head_branch":"release-plz/main"}' \
+    '{"number":-42,"head_branch":"release-plz/main"}'; do
+    if run_promotion "$state_dir" "$release_pr_json"; then
+      fail "release PR number must be a positive integer: $release_pr_json"
+    fi
+  done
+  [[ ! -s "$state_dir/calls" ]] || fail "invalid release PR numbers must not call GitHub"
+}
+
 test_canonical_branch_is_a_noop
 test_staging_branch_replaces_canonical_branch
 test_unexpected_branch_does_not_mutate_refs
 test_rename_failure_restores_previous_canonical_branch
+test_release_pr_number_must_be_a_positive_integer

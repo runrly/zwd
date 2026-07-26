@@ -55,11 +55,24 @@ restore_canonical_branch() {
     -f "sha=$previous_sha" > /dev/null
 }
 
+release_pr_number() {
+  "$JQ_BIN" -er '
+    .number as $number
+    | if ($number | type) != "number" then
+        error("release PR number must be a positive integer")
+      elif $number <= 0 or $number != ($number | floor) then
+        error("release PR number must be a positive integer")
+      else
+        $number
+      end
+  ' <<<"$RELEASE_PR_JSON"
+}
+
 main() {
   require_environment
 
   local pr_number head_branch staging_sha previous_canonical_sha encoded_staging_branch
-  pr_number="$("$JQ_BIN" -er '.number | integers' <<<"$RELEASE_PR_JSON")"
+  pr_number="$(release_pr_number)"
   head_branch="$("$JQ_BIN" -er '.head_branch | strings' <<<"$RELEASE_PR_JSON")"
 
   if [[ "$head_branch" == "$CANONICAL_BRANCH" ]]; then

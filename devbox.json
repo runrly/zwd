@@ -4,7 +4,8 @@
     "cargo-make@latest",
     "rustup@latest",
     "libiconv@latest",
-    "committed@1.1.11"
+    "committed@1.1.11",
+    "jq@1.8.2"
   ],
   "env": {
     "PROJECT_DIR": "$PWD",
