@@ -20,9 +20,9 @@ Release-plz creates a timestamped branch whenever it opens a new Release PR. Tha
 
 ## Decision
 
-Use `release-plz/main` as the persistent protected Release PR branch. Configure release-plz with the `release-plz/` prefix so it can update an open canonical PR. When it creates a timestamped staging branch, the workflow validates the release-plz output, promotes the staging branch to `release-plz/main`, and removes the staging ref.
+Use `release-plz/main` as the persistent protected Release PR branch. Configure release-plz with the `release-plz/` prefix so it can update an open canonical PR. When it creates a timestamped staging branch, the workflow validates the release-plz output, moves the canonical ref to the staging commit, opens a replacement canonical PR with the staging PR metadata, then closes the staging PR and removes its ref.
 
-Only the Runrly Echo App can create, update, or delete the canonical branch. The tag classifier accepts only a merged Release PR whose exact head ref is `release-plz/main`. If promotion fails after removing the prior canonical ref, the workflow restores that ref and retains the staging branch for recovery.
+Only the Runrly Echo App can create, update, or delete the canonical branch and PR. The tag classifier accepts only a merged Release PR whose exact head ref is `release-plz/main`. If replacement fails, the workflow closes the replacement PR, reopens the staging PR when needed, and restores the prior canonical ref.
 
 ## Consequences
 
@@ -35,7 +35,7 @@ Only the Runrly Echo App can create, update, or delete the canonical branch. The
 ### Negative
 
 - **NEG-001**: Promotion needs a small GitHub API helper because release-plz does not expose a fixed branch-name setting.
-- **NEG-002**: A staging ref exists briefly during reconciliation and is retained when recovery is required.
+- **NEG-002**: A staging ref and a replacement PR exist briefly during reconciliation and are retained only when rollback cannot complete.
 
 ## Alternatives Considered
 
