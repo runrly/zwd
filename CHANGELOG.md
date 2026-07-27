@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.2
+
+### Patch Changes
+
+- 8fc2283ef3: use persistent release pr branch
+- 723bbf6e93: validate release pr input
+- d952bb9049: replace staging release pr
+- c56bf4dc6b: update release-plz action
+
 ## 0.2.1
 
 ### Patch Changes
