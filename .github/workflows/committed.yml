@@ -9,6 +9,7 @@ permissions:
 jobs:
   committed:
     name: Conventional Commits
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v6
