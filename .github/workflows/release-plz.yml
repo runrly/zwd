@@ -59,7 +59,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Run release-plz
         id: release-plz
-        uses: release-plz/action@v0.5.130
+        uses: release-plz/action@v0.5.131
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
         with:
