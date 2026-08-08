@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0
+
+### Minor Changes
+
+- e010f3afab: add incremental maintenance commands (#25)
+### Patch Changes
+
+- d930f724bc: bump actions/dependency-review-action from 4 to 5 (#22)
+
 ## 0.2.2
 
 ### Patch Changes
