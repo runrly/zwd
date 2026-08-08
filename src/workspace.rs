@@ -6,6 +6,7 @@ use std::{
 };
 
 use serde::{Deserialize, Deserializer, Serialize, de};
+use serde_json::Value;
 
 use crate::{
     cli::Mode,
@@ -18,7 +19,7 @@ const WORKSPACE_EXTENSION: &str = "code-workspace";
 const WORKSPACES_DIR: &str = "workspaces";
 const GENERATED_NAME_ATTEMPTS: usize = 16;
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct WorkspaceFile {
     #[serde(default)]
     folders: Vec<WorkspaceFolder>,
@@ -26,7 +27,7 @@ pub struct WorkspaceFile {
     zwd: Option<DockConfig>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct DockConfig {
     mode: Option<Mode>,
 }
@@ -70,6 +71,16 @@ pub struct WorkspaceFolder {
 pub(crate) struct ResolvedFolder {
     pub name: LinkName,
     pub target: PathBuf,
+}
+
+#[derive(Debug)]
+pub(crate) struct WorkspaceEdit {
+    path: PathBuf,
+    original_content: String,
+    document: Value,
+    workspace: WorkspaceFile,
+    changed: Vec<PathBuf>,
+    unchanged: Vec<PathBuf>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -147,6 +158,125 @@ pub(crate) fn resolve_workspace_reference(workspace: &Path) -> Result<PathBuf> {
 
 pub(crate) fn list_registered_workspaces() -> Result<Vec<RegisteredWorkspace>> {
     list_registered_workspaces_in(&registered_workspaces_dir()?)
+}
+
+pub(crate) fn prepare_workspace_edit(
+    workspace_path: &Path,
+    paths: &[PathBuf],
+) -> Result<WorkspaceEdit> {
+    let (path, original_content, mut document, workspace) =
+        read_workspace_document(workspace_path)?;
+    let current_dir = std::env::current_dir()?;
+    let requested = resolve_edit_paths(paths, &current_dir)?;
+    let existing_targets = workspace.folder_targets(&path)?;
+    let folders = document
+        .get("folders")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+
+    let (folders, changed, unchanged) = add_folder_entries(folders, existing_targets, requested);
+
+    let object = document.as_object_mut().ok_or_else(|| {
+        serde_json::Error::io(std::io::Error::other("workspace must be a JSON object"))
+    })?;
+    object.insert("folders".to_string(), Value::Array(folders));
+    let workspace = serde_json::from_value(document.clone())?;
+
+    Ok(WorkspaceEdit {
+        path,
+        original_content,
+        document,
+        workspace,
+        changed,
+        unchanged,
+    })
+}
+
+impl WorkspaceEdit {
+    pub(crate) fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub(crate) fn mode(&self) -> Result<Mode> {
+        self.workspace.open_mode(None)
+    }
+
+    pub(crate) fn resolved_dock_folders(&self) -> Result<Vec<ResolvedFolder>> {
+        self.workspace.resolved_dock_folders(&self.path)
+    }
+
+    pub(crate) fn write(&self) -> Result<()> {
+        let content = serde_json::to_string_pretty(&self.document)?;
+        fs::write(&self.path, format!("{content}\n"))?;
+
+        Ok(())
+    }
+
+    pub(crate) fn restore(&self) -> Result<()> {
+        fs::write(&self.path, &self.original_content)?;
+
+        Ok(())
+    }
+
+    pub(crate) fn changed(&self) -> &[PathBuf] {
+        &self.changed
+    }
+
+    pub(crate) fn unchanged(&self) -> &[PathBuf] {
+        &self.unchanged
+    }
+}
+
+fn read_workspace_document(
+    workspace_path: &Path,
+) -> Result<(PathBuf, String, Value, WorkspaceFile)> {
+    ensure_code_workspace_path(workspace_path)?;
+    let path = fs::canonicalize(workspace_path)?;
+    let content = fs::read_to_string(&path)?;
+    let document: Value = serde_json::from_str(&content)?;
+    let workspace = serde_json::from_value(document.clone())?;
+
+    Ok((path, content, document, workspace))
+}
+
+fn resolve_edit_paths(paths: &[PathBuf], current_dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut resolved = Vec::new();
+    let mut seen = HashSet::new();
+
+    for path in paths {
+        let target = canonicalize_folder_arg(current_dir, path)?;
+        if !target.is_dir() {
+            return Err(AppError::FolderTargetNotDirectory { path: target });
+        }
+        if seen.insert(target.clone()) {
+            resolved.push(target);
+        }
+    }
+
+    Ok(resolved)
+}
+
+fn add_folder_entries(
+    mut folders: Vec<Value>,
+    existing_targets: Vec<PathBuf>,
+    requested: Vec<PathBuf>,
+) -> (Vec<Value>, Vec<PathBuf>, Vec<PathBuf>) {
+    let existing = existing_targets.into_iter().collect::<HashSet<_>>();
+    let mut changed = Vec::new();
+    let mut unchanged = Vec::new();
+
+    for target in requested {
+        if existing.contains(&target) {
+            unchanged.push(target);
+            continue;
+        }
+
+        folders.push(serde_json::json!({ "path": target }));
+        changed.push(target);
+    }
+
+    (folders, changed, unchanged)
 }
 
 fn create_registered_workspace(
@@ -418,11 +548,7 @@ fn workspace_dir(workspace_path: &Path) -> Result<&Path> {
 }
 
 fn resolve_folder_target(workspace_dir: &Path, folder: &WorkspaceFolder) -> Result<PathBuf> {
-    let joined = if folder.path.is_absolute() {
-        folder.path.clone()
-    } else {
-        workspace_dir.join(&folder.path)
-    };
+    let joined = resolve_folder_path(workspace_dir, folder);
     let target = fs::canonicalize(&joined).map_err(|source| AppError::FolderResolve {
         path: joined.clone(),
         source,
@@ -433,6 +559,14 @@ fn resolve_folder_target(workspace_dir: &Path, folder: &WorkspaceFolder) -> Resu
     }
 
     Ok(target)
+}
+
+fn resolve_folder_path(workspace_dir: &Path, folder: &WorkspaceFolder) -> PathBuf {
+    if folder.path.is_absolute() {
+        folder.path.clone()
+    } else {
+        workspace_dir.join(&folder.path)
+    }
 }
 
 fn case_insensitive_link_key(name: &LinkName) -> String {

@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     error::{AppError, Result},
-    workspace::ResolvedFolder,
+    workspace::{LinkName, ResolvedFolder},
 };
 
 const LOCK_FILE: &str = ".zwd-lock.json";
@@ -39,10 +39,7 @@ pub(crate) fn build_dock_in(
     folders: &[ResolvedFolder],
 ) -> Result<PathBuf> {
     let workspace_abs = absolute_workspace_path(workspace_path)?;
-    let dock_root = cache_dir
-        .join("zwd")
-        .join("docks")
-        .join(dock_name(workspace_path, &workspace_abs));
+    let dock_root = dock_root_in(cache_dir, workspace_path, &workspace_abs);
 
     prepare_dock_dir(&dock_root, &workspace_abs)?;
 
@@ -55,12 +52,74 @@ pub(crate) fn build_dock_in(
     Ok(dock_root)
 }
 
+pub(crate) fn infer_workspace_from_current_dock() -> Result<PathBuf> {
+    let current_dir = std::env::current_dir()?;
+    if !current_dir.join(LOCK_FILE).exists() {
+        return Err(AppError::WorkspaceReferenceRequired);
+    }
+
+    let lock = read_lock(&current_dir)?;
+    let workspace_path = absolute_workspace_path(&lock.workspace_path)?;
+    let expected_dock = dock_root_for(&workspace_path)?;
+    if current_dir != expected_dock {
+        return Err(AppError::WorkspaceReferenceRequired);
+    }
+
+    validate_owned_dock(&current_dir, &workspace_path)?;
+
+    Ok(workspace_path)
+}
+
+pub(crate) fn validate_existing_dock(workspace_path: &Path) -> Result<Option<PathBuf>> {
+    let dock_root = dock_root_for(workspace_path)?;
+    if !dock_root.exists() {
+        return Ok(None);
+    }
+
+    let workspace_abs = absolute_workspace_path(workspace_path)?;
+    validate_owned_dock(&dock_root, &workspace_abs)?;
+
+    Ok(Some(dock_root))
+}
+
+pub(crate) fn sync_existing_dock(
+    workspace_path: &Path,
+    folders: &[ResolvedFolder],
+) -> Result<bool> {
+    let Some(dock_root) = validate_existing_dock(workspace_path)? else {
+        return Ok(false);
+    };
+    let workspace_abs = absolute_workspace_path(workspace_path)?;
+    let lock = validate_owned_dock(&dock_root, &workspace_abs)?;
+    let original_folders = resolved_folders_from_lock(&lock)?;
+
+    if let Err(error) = reconcile_dock(&dock_root, &workspace_abs, folders) {
+        let _ = reconcile_dock(&dock_root, &workspace_abs, &original_folders);
+        return Err(error);
+    }
+
+    Ok(true)
+}
+
 fn prepare_dock_dir(dock_root: &Path, workspace_path: &Path) -> Result<()> {
     if !dock_root.exists() {
         fs::create_dir_all(dock_root)?;
         return Ok(());
     }
 
+    if !dock_root.is_dir() {
+        return Err(AppError::DockPathNotDirectory {
+            path: dock_root.to_path_buf(),
+        });
+    }
+
+    let lock = validate_owned_dock(dock_root, workspace_path)?;
+    remove_locked_links(dock_root, &lock)?;
+
+    Ok(())
+}
+
+fn validate_owned_dock(dock_root: &Path, workspace_path: &Path) -> Result<DockLock> {
     if !dock_root.is_dir() {
         return Err(AppError::DockPathNotDirectory {
             path: dock_root.to_path_buf(),
@@ -89,19 +148,81 @@ fn prepare_dock_dir(dock_root: &Path, workspace_path: &Path) -> Result<()> {
         if file_name == LOCK_FILE {
             continue;
         }
-
         if !expected_links.contains(file_name.as_ref()) {
             return Err(AppError::UnmanagedDockContent { path: entry.path() });
         }
-
         if !entry.file_type()?.is_symlink() {
             return Err(AppError::ManagedDockEntryNotSymlink { path: entry.path() });
         }
+    }
 
-        remove_managed_link(&entry.path())?;
+    Ok(lock)
+}
+
+fn remove_locked_links(dock_root: &Path, lock: &DockLock) -> Result<()> {
+    for entry in fs::read_dir(dock_root)? {
+        let entry = entry?;
+        let file_name = entry.file_name();
+        if file_name == LOCK_FILE {
+            continue;
+        }
+        if lock
+            .links
+            .iter()
+            .any(|link| link.name == file_name.to_string_lossy())
+        {
+            remove_managed_link(&entry.path())?;
+        }
     }
 
     Ok(())
+}
+
+fn reconcile_dock(
+    dock_root: &Path,
+    workspace_path: &Path,
+    folders: &[ResolvedFolder],
+) -> Result<()> {
+    for entry in fs::read_dir(dock_root)? {
+        let entry = entry?;
+        let file_name = entry.file_name();
+        if file_name == LOCK_FILE {
+            continue;
+        }
+        let Some(folder) = folders
+            .iter()
+            .find(|folder| folder.name.as_str() == file_name.to_string_lossy())
+        else {
+            remove_managed_link(&entry.path())?;
+            continue;
+        };
+        if fs::read_link(entry.path())? != folder.target {
+            remove_managed_link(&entry.path())?;
+        }
+    }
+
+    for folder in folders {
+        let link = dock_root.join(folder.name.as_str());
+        if link.symlink_metadata().is_err() {
+            create_symlink(&folder.target, &link)?;
+        }
+    }
+
+    write_lock(dock_root, workspace_path, folders)?;
+
+    Ok(())
+}
+
+fn resolved_folders_from_lock(lock: &DockLock) -> Result<Vec<ResolvedFolder>> {
+    lock.links
+        .iter()
+        .map(|link| {
+            Ok(ResolvedFolder {
+                name: LinkName::new(&link.name)?,
+                target: link.target.clone(),
+            })
+        })
+        .collect()
 }
 
 fn read_lock(dock_root: &Path) -> Result<DockLock> {
@@ -155,6 +276,20 @@ fn absolute_workspace_path(path: &Path) -> Result<PathBuf> {
     } else {
         current_dir.join(path)
     })
+}
+
+fn dock_root_for(workspace_path: &Path) -> Result<PathBuf> {
+    let cache_dir = dirs::cache_dir().ok_or(AppError::CacheDirNotFound)?;
+    let workspace_abs = absolute_workspace_path(workspace_path)?;
+
+    Ok(dock_root_in(&cache_dir, workspace_path, &workspace_abs))
+}
+
+fn dock_root_in(cache_dir: &Path, workspace_path: &Path, workspace_abs: &Path) -> PathBuf {
+    cache_dir
+        .join("zwd")
+        .join("docks")
+        .join(dock_name(workspace_path, workspace_abs))
 }
 
 fn dock_name(workspace_path: &Path, workspace_abs: &Path) -> String {

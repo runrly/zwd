@@ -54,6 +54,7 @@ pub fn run(cli: Cli) -> Result<()> {
 
             zed::open_zed(&zed_bin, target, reuse)
         }
+        Commands::Add { paths, workspace } => edit_workspace(workspace.as_deref(), &paths),
         Commands::Install {
             command,
             tasks_path,
@@ -65,5 +66,59 @@ pub fn run(cli: Cli) -> Result<()> {
 
             Ok(())
         }
+    }
+}
+
+fn edit_workspace(reference: Option<&std::path::Path>, paths: &[std::path::PathBuf]) -> Result<()> {
+    let workspace_path = resolve_edit_workspace(reference)?;
+    let edit = workspace::prepare_workspace_edit(&workspace_path, paths)?;
+
+    if edit.changed().is_empty() {
+        print_edit_result(edit.changed(), edit.unchanged(), false);
+        return Ok(());
+    }
+
+    let dock = dock::validate_existing_dock(edit.path())?;
+    let needs_dock_validation = edit.mode()? == cli::Mode::Symlink || dock.is_some();
+    let dock_folders = needs_dock_validation
+        .then(|| edit.resolved_dock_folders())
+        .transpose()?;
+
+    edit.write()?;
+    let dock_synchronized = match dock_folders {
+        Some(folders) => match dock::sync_existing_dock(edit.path(), &folders) {
+            Ok(synchronized) => synchronized,
+            Err(error) => {
+                let _ = edit.restore();
+                return Err(error);
+            }
+        },
+        None => false,
+    };
+    print_edit_result(edit.changed(), edit.unchanged(), dock_synchronized);
+
+    Ok(())
+}
+
+fn resolve_edit_workspace(reference: Option<&std::path::Path>) -> Result<std::path::PathBuf> {
+    match reference {
+        Some(reference) => workspace::resolve_workspace_reference(reference),
+        None => dock::infer_workspace_from_current_dock(),
+    }
+}
+
+fn print_edit_result(
+    changed: &[std::path::PathBuf],
+    unchanged: &[std::path::PathBuf],
+    dock_synchronized: bool,
+) {
+    for path in changed {
+        println!("added\t{}", path.display());
+    }
+    for path in unchanged {
+        println!("already present\t{}", path.display());
+    }
+    if dock_synchronized {
+        println!("dock synchronized");
     }
 }

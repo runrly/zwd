@@ -33,6 +33,12 @@ pub enum Commands {
         #[arg(long, default_value = "zed")]
         zed_bin: PathBuf,
     },
+    Add {
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
+        #[arg(long)]
+        workspace: Option<PathBuf>,
+    },
     Install {
         #[arg(long)]
         command: Option<PathBuf>,

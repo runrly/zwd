@@ -1,7 +1,7 @@
 use std::{
     error::Error,
     fs,
-    path::Path,
+    path::{Path, PathBuf},
     process::{Command, Output},
 };
 
@@ -27,6 +27,40 @@ fn run_with_home_and_cwd(args: &[&str], home: &Path, cwd: &Path) -> Result<Outpu
 
 fn stdout_line(output: &Output) -> String {
     String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
+fn open_dock(workspace: &Path, home: &Path, cwd: &Path) -> Result<PathBuf, Box<dyn Error>> {
+    let workspace_arg = workspace.to_string_lossy().into_owned();
+    let output = run_with_home_and_cwd(
+        &["open", &workspace_arg, "--reuse", "--zed-bin", "/bin/echo"],
+        home,
+        cwd,
+    )?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    Ok(PathBuf::from(stdout_line(&output)))
+}
+
+fn folder_paths(workspace: &Path) -> Result<Vec<String>, Box<dyn Error>> {
+    let document: Value = serde_json::from_str(&fs::read_to_string(workspace)?)?;
+    let folders = document["folders"]
+        .as_array()
+        .ok_or("workspace folders must be an array")?;
+
+    folders
+        .iter()
+        .map(|folder| {
+            folder["path"]
+                .as_str()
+                .map(str::to_string)
+                .ok_or_else(|| "workspace folder path must be a string".into())
+        })
+        .collect()
 }
 
 #[test]
@@ -645,6 +679,446 @@ fn open_symlink_rejects_case_insensitive_duplicate_links_before_zed() -> Result<
 
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("duplicate folder name"));
+
+    Ok(())
+}
+
+#[test]
+fn add_updates_existing_dock_and_preserves_workspace_properties() -> Result<(), Box<dyn Error>> {
+    let temp = tempdir()?;
+    let home = temp.path().join("home");
+    let project_root = temp.path().join("projects");
+    let api = project_root.join("api");
+    let web = project_root.join("web");
+    let docs = project_root.join("docs");
+    let workspace = temp.path().join("demo.code-workspace");
+    fs::create_dir_all(&api)?;
+    fs::create_dir_all(&web)?;
+    fs::create_dir_all(&docs)?;
+    fs::write(
+        &workspace,
+        format!(
+            r#"{{
+              "folders": [{{ "name": "api-root", "path": {:?} }}],
+              "settings": {{ "theme": "dark" }},
+              "zwd": {{ "mode": "symlink" }}
+            }}"#,
+            api.canonicalize()?
+        ),
+    )?;
+    let dock = open_dock(&workspace, &home, &project_root)?;
+    let workspace_arg = workspace.to_string_lossy().into_owned();
+    let web_arg = web.to_string_lossy().into_owned();
+    let docs_arg = docs.to_string_lossy().into_owned();
+
+    let output = run_with_home_and_cwd(
+        &["add", &web_arg, &docs_arg, "--workspace", &workspace_arg],
+        &home,
+        &project_root,
+    )?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        folder_paths(&workspace)?,
+        vec![
+            api.canonicalize()?.to_string_lossy().into_owned(),
+            web.canonicalize()?.to_string_lossy().into_owned(),
+            docs.canonicalize()?.to_string_lossy().into_owned(),
+        ]
+    );
+    let document: Value = serde_json::from_str(&fs::read_to_string(&workspace)?)?;
+    assert_eq!(document["settings"]["theme"], "dark");
+    assert_eq!(document["folders"][0]["name"], "api-root");
+    assert!(
+        dock.join("web")
+            .symlink_metadata()?
+            .file_type()
+            .is_symlink()
+    );
+    assert!(
+        dock.join("docs")
+            .symlink_metadata()?
+            .file_type()
+            .is_symlink()
+    );
+
+    Ok(())
+}
+
+#[test]
+fn add_infers_workspace_from_dock_root() -> Result<(), Box<dyn Error>> {
+    let temp = tempdir()?;
+    let home = temp.path().join("home");
+    let project_root = temp.path().join("projects");
+    let api = project_root.join("api");
+    let docs = project_root.join("docs");
+    let workspace = temp.path().join("demo.code-workspace");
+    fs::create_dir_all(&api)?;
+    fs::create_dir_all(&docs)?;
+    fs::write(
+        &workspace,
+        format!(
+            r#"{{"folders":[{{"path":{:?}}}],"zwd":{{"mode":"symlink"}}}}"#,
+            api.canonicalize()?
+        ),
+    )?;
+    let dock = open_dock(&workspace, &home, &project_root)?;
+    let docs_arg = docs.to_string_lossy().into_owned();
+
+    let output = run_with_home_and_cwd(&["add", &docs_arg], &home, &dock)?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(folder_paths(&workspace)?.len(), 2);
+    assert!(
+        dock.join("docs")
+            .symlink_metadata()?
+            .file_type()
+            .is_symlink()
+    );
+
+    Ok(())
+}
+
+#[test]
+#[ignore = "enabled with the remove command"]
+fn remove_updates_dock_without_deleting_project_directories() -> Result<(), Box<dyn Error>> {
+    let temp = tempdir()?;
+    let home = temp.path().join("home");
+    let project_root = temp.path().join("projects");
+    let api = project_root.join("api");
+    let docs = project_root.join("docs");
+    let missing = project_root.join("missing");
+    let workspace = temp.path().join("demo.code-workspace");
+    fs::create_dir_all(&api)?;
+    fs::create_dir_all(&docs)?;
+    fs::create_dir_all(&missing)?;
+    fs::write(
+        &workspace,
+        format!(
+            r#"{{
+              "folders": [{{"path":{:?}}}, {{"path":{:?}}}],
+              "zwd": {{"mode":"symlink"}}
+            }}"#,
+            api.canonicalize()?,
+            docs.canonicalize()?
+        ),
+    )?;
+    let dock = open_dock(&workspace, &home, &project_root)?;
+    let workspace_arg = workspace.to_string_lossy().into_owned();
+    let docs_arg = docs.to_string_lossy().into_owned();
+    let missing_arg = missing.to_string_lossy().into_owned();
+
+    let output = run_with_home_and_cwd(
+        &[
+            "remove",
+            &docs_arg,
+            &missing_arg,
+            "--workspace",
+            &workspace_arg,
+        ],
+        &home,
+        &project_root,
+    )?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(folder_paths(&workspace)?.len(), 1);
+    assert!(!dock.join("docs").exists());
+    assert!(docs.is_dir());
+
+    Ok(())
+}
+
+#[test]
+fn add_aborts_without_changing_workspace_when_dock_has_unmanaged_content()
+-> Result<(), Box<dyn Error>> {
+    let temp = tempdir()?;
+    let home = temp.path().join("home");
+    let project_root = temp.path().join("projects");
+    let api = project_root.join("api");
+    let docs = project_root.join("docs");
+    let workspace = temp.path().join("demo.code-workspace");
+    fs::create_dir_all(&api)?;
+    fs::create_dir_all(&docs)?;
+    fs::write(
+        &workspace,
+        format!(
+            r#"{{"folders":[{{"path":{:?}}}],"zwd":{{"mode":"symlink"}}}}"#,
+            api.canonicalize()?
+        ),
+    )?;
+    let dock = open_dock(&workspace, &home, &project_root)?;
+    fs::write(dock.join("notes.txt"), "do not touch")?;
+    let before = fs::read_to_string(&workspace)?;
+    let workspace_arg = workspace.to_string_lossy().into_owned();
+    let docs_arg = docs.to_string_lossy().into_owned();
+
+    let output = run_with_home_and_cwd(
+        &["add", &docs_arg, "--workspace", &workspace_arg],
+        &home,
+        &project_root,
+    )?;
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("unmanaged content"));
+    assert_eq!(fs::read_to_string(&workspace)?, before);
+
+    Ok(())
+}
+
+#[test]
+#[ignore = "enabled with the remove command"]
+fn remove_allows_an_empty_workspace() -> Result<(), Box<dyn Error>> {
+    let temp = tempdir()?;
+    let home = temp.path().join("home");
+    let project_root = temp.path().join("projects");
+    let api = project_root.join("api");
+    let workspace = temp.path().join("demo.code-workspace");
+    fs::create_dir_all(&api)?;
+    fs::write(
+        &workspace,
+        format!(
+            r#"{{"folders":[{{"path":{:?}}}],"zwd":{{"mode":"folders"}}}}"#,
+            api.canonicalize()?
+        ),
+    )?;
+    let workspace_arg = workspace.to_string_lossy().into_owned();
+    let api_arg = api.to_string_lossy().into_owned();
+
+    let output = run_with_home_and_cwd(
+        &["remove", &api_arg, "--workspace", &workspace_arg],
+        &home,
+        &project_root,
+    )?;
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(folder_paths(&workspace)?.is_empty());
+
+    Ok(())
+}
+
+#[test]
+#[ignore = "enabled with the delete command"]
+fn delete_previews_then_removes_owned_dock_and_workspace() -> Result<(), Box<dyn Error>> {
+    let temp = tempdir()?;
+    let home = temp.path().join("home");
+    let project_root = temp.path().join("projects");
+    let api = project_root.join("api");
+    let workspace = temp.path().join("demo.code-workspace");
+    fs::create_dir_all(&api)?;
+    fs::write(
+        &workspace,
+        format!(
+            r#"{{"folders":[{{"path":{:?}}}],"zwd":{{"mode":"symlink"}}}}"#,
+            api.canonicalize()?
+        ),
+    )?;
+    let dock = open_dock(&workspace, &home, &project_root)?;
+    let workspace_arg = workspace.to_string_lossy().into_owned();
+
+    let preview = run_with_home_and_cwd(&["delete", &workspace_arg], &home, &project_root)?;
+
+    assert!(
+        preview.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&preview.stderr)
+    );
+    assert!(workspace.exists());
+    assert!(dock.exists());
+
+    let deleted =
+        run_with_home_and_cwd(&["delete", &workspace_arg, "--force"], &home, &project_root)?;
+
+    assert!(
+        deleted.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&deleted.stderr)
+    );
+    assert!(!workspace.exists());
+    assert!(!dock.exists());
+    assert!(api.is_dir());
+
+    Ok(())
+}
+
+#[test]
+#[ignore = "enabled with the status command"]
+fn status_reports_healthy_and_unhealthy_dock_states() -> Result<(), Box<dyn Error>> {
+    let temp = tempdir()?;
+    let home = temp.path().join("home");
+    let project_root = temp.path().join("projects");
+    let api = project_root.join("api");
+    let workspace = temp.path().join("demo.code-workspace");
+    fs::create_dir_all(&api)?;
+    fs::write(
+        &workspace,
+        format!(
+            r#"{{"folders":[{{"path":{:?}}}],"zwd":{{"mode":"symlink"}}}}"#,
+            api.canonicalize()?
+        ),
+    )?;
+    let dock = open_dock(&workspace, &home, &project_root)?;
+    let workspace_arg = workspace.to_string_lossy().into_owned();
+
+    let healthy = run_with_home_and_cwd(&["status", &workspace_arg], &home, &project_root)?;
+
+    assert!(
+        healthy.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&healthy.stderr)
+    );
+    assert!(stdout_line(&healthy).contains("healthy"));
+
+    fs::write(dock.join("notes.txt"), "unmanaged")?;
+    let unhealthy = run_with_home_and_cwd(&["status", &workspace_arg], &home, &project_root)?;
+
+    assert!(!unhealthy.status.success());
+    assert!(stdout_line(&unhealthy).contains("unhealthy"));
+
+    Ok(())
+}
+
+#[test]
+fn add_reports_existing_folder_without_rewriting_workspace_or_dock() -> Result<(), Box<dyn Error>> {
+    let temp = tempdir()?;
+    let home = temp.path().join("home");
+    let project_root = temp.path().join("projects");
+    let api = project_root.join("api");
+    let workspace = temp.path().join("demo.code-workspace");
+    fs::create_dir_all(&api)?;
+    fs::write(
+        &workspace,
+        format!(
+            r#"{{"folders":[{{"path":{:?}}}],"zwd":{{"mode":"symlink"}}}}"#,
+            api.canonicalize()?
+        ),
+    )?;
+    let dock = open_dock(&workspace, &home, &project_root)?;
+    let before_workspace = fs::read_to_string(&workspace)?;
+    let before_lock = fs::read_to_string(dock.join(".zwd-lock.json"))?;
+    let workspace_arg = workspace.to_string_lossy().into_owned();
+    let api_arg = api.to_string_lossy().into_owned();
+
+    let output = run_with_home_and_cwd(
+        &["add", &api_arg, "--workspace", &workspace_arg],
+        &home,
+        &project_root,
+    )?;
+
+    assert!(output.status.success());
+    assert!(stdout_line(&output).contains("already present"));
+    assert_eq!(fs::read_to_string(&workspace)?, before_workspace);
+    assert_eq!(
+        fs::read_to_string(dock.join(".zwd-lock.json"))?,
+        before_lock
+    );
+
+    Ok(())
+}
+
+#[test]
+#[ignore = "enabled with the remove command"]
+fn remove_deletes_all_legacy_entries_for_the_same_folder() -> Result<(), Box<dyn Error>> {
+    let temp = tempdir()?;
+    let home = temp.path().join("home");
+    let project_root = temp.path().join("projects");
+    let api = project_root.join("api");
+    let workspace = temp.path().join("demo.code-workspace");
+    fs::create_dir_all(&api)?;
+    fs::write(
+        &workspace,
+        format!(
+            r#"{{
+              "folders": [{{"path":{:?}}}, {{"path":{:?}}}],
+              "zwd": {{"mode":"folders"}}
+            }}"#,
+            api.canonicalize()?,
+            api.canonicalize()?
+        ),
+    )?;
+    let workspace_arg = workspace.to_string_lossy().into_owned();
+    let api_arg = api.to_string_lossy().into_owned();
+
+    let output = run_with_home_and_cwd(
+        &["remove", &api_arg, "--workspace", &workspace_arg],
+        &home,
+        &project_root,
+    )?;
+
+    assert!(output.status.success());
+    assert!(folder_paths(&workspace)?.is_empty());
+
+    Ok(())
+}
+
+#[test]
+#[ignore = "enabled with the delete command"]
+fn delete_refuses_to_remove_the_current_dock_root() -> Result<(), Box<dyn Error>> {
+    let temp = tempdir()?;
+    let home = temp.path().join("home");
+    let project_root = temp.path().join("projects");
+    let api = project_root.join("api");
+    let workspace = temp.path().join("demo.code-workspace");
+    fs::create_dir_all(&api)?;
+    fs::write(
+        &workspace,
+        format!(
+            r#"{{"folders":[{{"path":{:?}}}],"zwd":{{"mode":"symlink"}}}}"#,
+            api.canonicalize()?
+        ),
+    )?;
+    let dock = open_dock(&workspace, &home, &project_root)?;
+    let workspace_arg = workspace.to_string_lossy().into_owned();
+
+    let output = run_with_home_and_cwd(&["delete", &workspace_arg, "--force"], &home, &dock)?;
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("leave"));
+    assert!(workspace.exists());
+    assert!(dock.exists());
+
+    Ok(())
+}
+
+#[test]
+#[ignore = "enabled with the status command"]
+fn status_lists_missing_workspace_folders_before_returning_an_error() -> Result<(), Box<dyn Error>>
+{
+    let temp = tempdir()?;
+    let home = temp.path().join("home");
+    let project_root = temp.path().join("projects");
+    let api = project_root.join("api");
+    let workspace = temp.path().join("demo.code-workspace");
+    fs::create_dir_all(&api)?;
+    fs::write(
+        &workspace,
+        format!(
+            r#"{{"folders":[{{"path":{:?}}}],"zwd":{{"mode":"folders"}}}}"#,
+            api.canonicalize()?
+        ),
+    )?;
+    fs::remove_dir(&api)?;
+    let workspace_arg = workspace.to_string_lossy().into_owned();
+
+    let output = run_with_home_and_cwd(&["status", &workspace_arg], &home, &project_root)?;
+
+    assert!(!output.status.success());
+    assert!(stdout_line(&output).contains("folder\tunhealthy"));
 
     Ok(())
 }
