@@ -73,6 +73,12 @@ pub(crate) struct ResolvedFolder {
     pub target: PathBuf,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum WorkspaceEditOperation {
+    Add,
+    Remove,
+}
+
 #[derive(Debug)]
 pub(crate) struct WorkspaceEdit {
     path: PathBuf,
@@ -163,6 +169,7 @@ pub(crate) fn list_registered_workspaces() -> Result<Vec<RegisteredWorkspace>> {
 pub(crate) fn prepare_workspace_edit(
     workspace_path: &Path,
     paths: &[PathBuf],
+    operation: WorkspaceEditOperation,
 ) -> Result<WorkspaceEdit> {
     let (path, original_content, mut document, workspace) =
         read_workspace_document(workspace_path)?;
@@ -175,7 +182,12 @@ pub(crate) fn prepare_workspace_edit(
         .cloned()
         .unwrap_or_default();
 
-    let (folders, changed, unchanged) = add_folder_entries(folders, existing_targets, requested);
+    let (folders, changed, unchanged) = match operation {
+        WorkspaceEditOperation::Add => add_folder_entries(folders, existing_targets, requested),
+        WorkspaceEditOperation::Remove => {
+            remove_folder_entries(folders, existing_targets, requested)
+        }
+    };
 
     let object = document.as_object_mut().ok_or_else(|| {
         serde_json::Error::io(std::io::Error::other("workspace must be a JSON object"))
@@ -277,6 +289,34 @@ fn add_folder_entries(
     }
 
     (folders, changed, unchanged)
+}
+
+fn remove_folder_entries(
+    folders: Vec<Value>,
+    existing_targets: Vec<PathBuf>,
+    requested: Vec<PathBuf>,
+) -> (Vec<Value>, Vec<PathBuf>, Vec<PathBuf>) {
+    let requested = requested.into_iter().collect::<HashSet<_>>();
+    let mut found = HashSet::new();
+    let mut remaining = Vec::with_capacity(folders.len());
+    let mut changed = Vec::new();
+
+    for (folder, target) in folders.into_iter().zip(existing_targets) {
+        if requested.contains(&target) {
+            if found.insert(target.clone()) {
+                changed.push(target);
+            }
+            continue;
+        }
+        remaining.push(folder);
+    }
+
+    let unchanged = requested
+        .into_iter()
+        .filter(|target| !found.contains(target))
+        .collect();
+
+    (remaining, changed, unchanged)
 }
 
 fn create_registered_workspace(

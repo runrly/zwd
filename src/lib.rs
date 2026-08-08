@@ -54,7 +54,16 @@ pub fn run(cli: Cli) -> Result<()> {
 
             zed::open_zed(&zed_bin, target, reuse)
         }
-        Commands::Add { paths, workspace } => edit_workspace(workspace.as_deref(), &paths),
+        Commands::Add { paths, workspace } => edit_workspace(
+            workspace.as_deref(),
+            &paths,
+            workspace::WorkspaceEditOperation::Add,
+        ),
+        Commands::Remove { paths, workspace } => edit_workspace(
+            workspace.as_deref(),
+            &paths,
+            workspace::WorkspaceEditOperation::Remove,
+        ),
         Commands::Install {
             command,
             tasks_path,
@@ -69,12 +78,16 @@ pub fn run(cli: Cli) -> Result<()> {
     }
 }
 
-fn edit_workspace(reference: Option<&std::path::Path>, paths: &[std::path::PathBuf]) -> Result<()> {
+fn edit_workspace(
+    reference: Option<&std::path::Path>,
+    paths: &[std::path::PathBuf],
+    operation: workspace::WorkspaceEditOperation,
+) -> Result<()> {
     let workspace_path = resolve_edit_workspace(reference)?;
-    let edit = workspace::prepare_workspace_edit(&workspace_path, paths)?;
+    let edit = workspace::prepare_workspace_edit(&workspace_path, paths, operation)?;
 
     if edit.changed().is_empty() {
-        print_edit_result(edit.changed(), edit.unchanged(), false);
+        print_edit_result(operation, edit.changed(), edit.unchanged(), false);
         return Ok(());
     }
 
@@ -95,7 +108,12 @@ fn edit_workspace(reference: Option<&std::path::Path>, paths: &[std::path::PathB
         },
         None => false,
     };
-    print_edit_result(edit.changed(), edit.unchanged(), dock_synchronized);
+    print_edit_result(
+        operation,
+        edit.changed(),
+        edit.unchanged(),
+        dock_synchronized,
+    );
 
     Ok(())
 }
@@ -108,15 +126,25 @@ fn resolve_edit_workspace(reference: Option<&std::path::Path>) -> Result<std::pa
 }
 
 fn print_edit_result(
+    operation: workspace::WorkspaceEditOperation,
     changed: &[std::path::PathBuf],
     unchanged: &[std::path::PathBuf],
     dock_synchronized: bool,
 ) {
+    let action = match operation {
+        workspace::WorkspaceEditOperation::Add => "added",
+        workspace::WorkspaceEditOperation::Remove => "removed",
+    };
+    let unchanged_action = match operation {
+        workspace::WorkspaceEditOperation::Add => "already present",
+        workspace::WorkspaceEditOperation::Remove => "already absent",
+    };
+
     for path in changed {
-        println!("added\t{}", path.display());
+        println!("{action}\t{}", path.display());
     }
     for path in unchanged {
-        println!("already present\t{}", path.display());
+        println!("{unchanged_action}\t{}", path.display());
     }
     if dock_synchronized {
         println!("dock synchronized");

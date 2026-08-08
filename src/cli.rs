@@ -39,6 +39,12 @@ pub enum Commands {
         #[arg(long)]
         workspace: Option<PathBuf>,
     },
+    Remove {
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
+        #[arg(long)]
+        workspace: Option<PathBuf>,
+    },
     Install {
         #[arg(long)]
         command: Option<PathBuf>,

@@ -788,7 +788,6 @@ fn add_infers_workspace_from_dock_root() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
-#[ignore = "enabled with the remove command"]
 fn remove_updates_dock_without_deleting_project_directories() -> Result<(), Box<dyn Error>> {
     let temp = tempdir()?;
     let home = temp.path().join("home");
@@ -878,7 +877,6 @@ fn add_aborts_without_changing_workspace_when_dock_has_unmanaged_content()
 }
 
 #[test]
-#[ignore = "enabled with the remove command"]
 fn remove_allows_an_empty_workspace() -> Result<(), Box<dyn Error>> {
     let temp = tempdir()?;
     let home = temp.path().join("home");
@@ -1032,7 +1030,6 @@ fn add_reports_existing_folder_without_rewriting_workspace_or_dock() -> Result<(
 }
 
 #[test]
-#[ignore = "enabled with the remove command"]
 fn remove_deletes_all_legacy_entries_for_the_same_folder() -> Result<(), Box<dyn Error>> {
     let temp = tempdir()?;
     let home = temp.path().join("home");
