@@ -911,7 +911,6 @@ fn remove_allows_an_empty_workspace() -> Result<(), Box<dyn Error>> {
 }
 
 #[test]
-#[ignore = "enabled with the delete command"]
 fn delete_previews_then_removes_owned_dock_and_workspace() -> Result<(), Box<dyn Error>> {
     let temp = tempdir()?;
     let home = temp.path().join("home");
@@ -1064,7 +1063,6 @@ fn remove_deletes_all_legacy_entries_for_the_same_folder() -> Result<(), Box<dyn
 }
 
 #[test]
-#[ignore = "enabled with the delete command"]
 fn delete_refuses_to_remove_the_current_dock_root() -> Result<(), Box<dyn Error>> {
     let temp = tempdir()?;
     let home = temp.path().join("home");

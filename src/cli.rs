@@ -45,6 +45,11 @@ pub enum Commands {
         #[arg(long)]
         workspace: Option<PathBuf>,
     },
+    Delete {
+        workspace: PathBuf,
+        #[arg(long)]
+        force: bool,
+    },
     Install {
         #[arg(long)]
         command: Option<PathBuf>,

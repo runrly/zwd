@@ -101,6 +101,24 @@ pub(crate) fn sync_existing_dock(
     Ok(true)
 }
 
+pub(crate) fn remove_owned_dock(workspace_path: &Path) -> Result<bool> {
+    let Some(dock_root) = validate_existing_dock(workspace_path)? else {
+        return Ok(false);
+    };
+    let workspace_abs = absolute_workspace_path(workspace_path)?;
+    let lock = validate_owned_dock(&dock_root, &workspace_abs)?;
+
+    remove_locked_links(&dock_root, &lock)?;
+    fs::remove_file(dock_root.join(LOCK_FILE))?;
+    fs::remove_dir(&dock_root)?;
+
+    Ok(true)
+}
+
+pub(crate) fn current_directory_is_dock(workspace_path: &Path) -> Result<bool> {
+    Ok(std::env::current_dir()? == dock_root_for(workspace_path)?)
+}
+
 fn prepare_dock_dir(dock_root: &Path, workspace_path: &Path) -> Result<()> {
     if !dock_root.exists() {
         fs::create_dir_all(dock_root)?;

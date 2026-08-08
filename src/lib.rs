@@ -8,7 +8,7 @@ mod workspace;
 mod zed;
 
 use cli::{Cli, Commands};
-use error::Result;
+use error::{AppError, Result};
 
 pub fn run(cli: Cli) -> Result<()> {
     match cli.command {
@@ -64,6 +64,7 @@ pub fn run(cli: Cli) -> Result<()> {
             &paths,
             workspace::WorkspaceEditOperation::Remove,
         ),
+        Commands::Delete { workspace, force } => delete_workspace(&workspace, force),
         Commands::Install {
             command,
             tasks_path,
@@ -149,4 +150,35 @@ fn print_edit_result(
     if dock_synchronized {
         println!("dock synchronized");
     }
+}
+
+fn delete_workspace(reference: &std::path::Path, force: bool) -> Result<()> {
+    let workspace = workspace::resolve_workspace_reference(reference)?;
+    workspace::read_workspace_file(&workspace)?;
+    let workspace_path = std::fs::canonicalize(&workspace)?;
+    let dock = dock::validate_existing_dock(&workspace_path)?;
+
+    println!("workspace\t{}", workspace_path.display());
+    match &dock {
+        Some(path) => println!("dock\t{}", path.display()),
+        None => println!("dock\tnot materialized"),
+    }
+
+    if !force {
+        println!("dry-run\tpass --force to delete");
+        return Ok(());
+    }
+    if dock::current_directory_is_dock(&workspace_path)? {
+        return Err(AppError::CurrentDirectoryIsDock {
+            path: workspace_path,
+        });
+    }
+
+    if dock.is_some() {
+        dock::remove_owned_dock(&workspace_path)?;
+    }
+    std::fs::remove_file(workspace_path)?;
+    println!("deleted");
+
+    Ok(())
 }
