@@ -28,6 +28,13 @@ struct DockLink {
     target: PathBuf,
 }
 
+#[derive(Debug)]
+pub(crate) enum DockStatus {
+    Absent { path: PathBuf },
+    Healthy { path: PathBuf },
+    Unhealthy { path: PathBuf, reason: String },
+}
+
 pub(crate) fn build_dock(workspace_path: &Path, folders: &[ResolvedFolder]) -> Result<PathBuf> {
     let cache_dir = dirs::cache_dir().ok_or(AppError::CacheDirNotFound)?;
     build_dock_in(&cache_dir, workspace_path, folders)
@@ -117,6 +124,22 @@ pub(crate) fn remove_owned_dock(workspace_path: &Path) -> Result<bool> {
 
 pub(crate) fn current_directory_is_dock(workspace_path: &Path) -> Result<bool> {
     Ok(std::env::current_dir()? == dock_root_for(workspace_path)?)
+}
+
+pub(crate) fn dock_status(workspace_path: &Path) -> Result<DockStatus> {
+    let dock_root = dock_root_for(workspace_path)?;
+    if !dock_root.exists() {
+        return Ok(DockStatus::Absent { path: dock_root });
+    }
+
+    let workspace_abs = absolute_workspace_path(workspace_path)?;
+    match validate_owned_dock(&dock_root, &workspace_abs) {
+        Ok(_) => Ok(DockStatus::Healthy { path: dock_root }),
+        Err(error) => Ok(DockStatus::Unhealthy {
+            path: dock_root,
+            reason: error.to_string(),
+        }),
+    }
 }
 
 fn prepare_dock_dir(dock_root: &Path, workspace_path: &Path) -> Result<()> {

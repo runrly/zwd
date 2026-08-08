@@ -52,6 +52,8 @@ pub enum AppError {
     WorkspaceReferenceRequired,
     #[error("current directory is the dock being deleted; leave {path} before retrying")]
     CurrentDirectoryIsDock { path: PathBuf },
+    #[error("workspace status is unhealthy: {reason}")]
+    WorkspaceStatusUnhealthy { reason: String },
     #[error("could not generate an unused workspace name")]
     WorkspaceNameGenerationExhausted,
     #[error(transparent)]

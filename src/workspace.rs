@@ -89,6 +89,20 @@ pub(crate) struct WorkspaceEdit {
     unchanged: Vec<PathBuf>,
 }
 
+#[derive(Debug)]
+pub(crate) struct WorkspaceStatus {
+    pub path: PathBuf,
+    pub registered: bool,
+    pub mode: Mode,
+    pub folders: Vec<FolderStatus>,
+}
+
+#[derive(Debug)]
+pub(crate) struct FolderStatus {
+    pub path: PathBuf,
+    pub target: std::result::Result<PathBuf, String>,
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct RegisteredWorkspace {
     pub name: String,
@@ -205,6 +219,26 @@ pub(crate) fn prepare_workspace_edit(
     })
 }
 
+pub(crate) fn workspace_status(workspace_path: &Path) -> Result<WorkspaceStatus> {
+    let (path, _, _, workspace) = read_workspace_document(workspace_path)?;
+    let workspace_dir = workspace_dir(&path)?;
+    let folders = workspace
+        .folders
+        .iter()
+        .map(|folder| FolderStatus {
+            path: resolve_folder_path(workspace_dir, folder),
+            target: resolve_folder_target(workspace_dir, folder).map_err(|error| error.to_string()),
+        })
+        .collect();
+
+    Ok(WorkspaceStatus {
+        registered: is_registered_workspace(&path)?,
+        mode: workspace.open_mode(None)?,
+        path,
+        folders,
+    })
+}
+
 impl WorkspaceEdit {
     pub(crate) fn path(&self) -> &Path {
         &self.path
@@ -317,6 +351,10 @@ fn remove_folder_entries(
         .collect();
 
     (remaining, changed, unchanged)
+}
+
+fn is_registered_workspace(path: &Path) -> Result<bool> {
+    Ok(path.parent() == Some(registered_workspaces_dir()?.as_path()))
 }
 
 fn create_registered_workspace(

@@ -65,6 +65,7 @@ pub fn run(cli: Cli) -> Result<()> {
             workspace::WorkspaceEditOperation::Remove,
         ),
         Commands::Delete { workspace, force } => delete_workspace(&workspace, force),
+        Commands::Status { workspace } => show_workspace_status(workspace.as_deref()),
         Commands::Install {
             command,
             tasks_path,
@@ -179,6 +180,53 @@ fn delete_workspace(reference: &std::path::Path, force: bool) -> Result<()> {
     }
     std::fs::remove_file(workspace_path)?;
     println!("deleted");
+
+    Ok(())
+}
+
+fn show_workspace_status(reference: Option<&std::path::Path>) -> Result<()> {
+    let workspace_path = resolve_edit_workspace(reference)?;
+    let status = workspace::workspace_status(&workspace_path)?;
+    println!("workspace\t{}", status.path.display());
+    println!(
+        "registration\t{}",
+        if status.registered {
+            "registered"
+        } else {
+            "explicit"
+        }
+    );
+    println!(
+        "mode\t{}",
+        match status.mode {
+            cli::Mode::Folders => "folders",
+            cli::Mode::Symlink => "symlink",
+        }
+    );
+
+    let mut unhealthy = None;
+    for folder in &status.folders {
+        match &folder.target {
+            Ok(target) => println!("folder\t{}", target.display()),
+            Err(reason) => {
+                println!("folder\tunhealthy\t{}\t{reason}", folder.path.display());
+                unhealthy = Some(reason.clone());
+            }
+        }
+    }
+
+    match dock::dock_status(&status.path)? {
+        dock::DockStatus::Absent { path } => println!("dock\tabsent\t{}", path.display()),
+        dock::DockStatus::Healthy { path } => println!("dock\thealthy\t{}", path.display()),
+        dock::DockStatus::Unhealthy { path, reason } => {
+            println!("dock\tunhealthy\t{}\t{reason}", path.display());
+            unhealthy = Some(reason);
+        }
+    }
+
+    if let Some(reason) = unhealthy {
+        return Err(AppError::WorkspaceStatusUnhealthy { reason });
+    }
 
     Ok(())
 }

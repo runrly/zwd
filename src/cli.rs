@@ -50,6 +50,9 @@ pub enum Commands {
         #[arg(long)]
         force: bool,
     },
+    Status {
+        workspace: Option<PathBuf>,
+    },
     Install {
         #[arg(long)]
         command: Option<PathBuf>,

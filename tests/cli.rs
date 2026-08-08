@@ -954,7 +954,6 @@ fn delete_previews_then_removes_owned_dock_and_workspace() -> Result<(), Box<dyn
 }
 
 #[test]
-#[ignore = "enabled with the status command"]
 fn status_reports_healthy_and_unhealthy_dock_states() -> Result<(), Box<dyn Error>> {
     let temp = tempdir()?;
     let home = temp.path().join("home");
@@ -1091,7 +1090,6 @@ fn delete_refuses_to_remove_the_current_dock_root() -> Result<(), Box<dyn Error>
 }
 
 #[test]
-#[ignore = "enabled with the status command"]
 fn status_lists_missing_workspace_folders_before_returning_an_error() -> Result<(), Box<dyn Error>>
 {
     let temp = tempdir()?;
