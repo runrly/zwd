@@ -23,8 +23,9 @@ Zed can open multiple folders directly, but its terminal still benefits from a s
 ## Features
 
 - Create registered Zed workspace files from one or more project folders.
-- Open a workspace by registered name or by `.code-workspace` path.
+- Open, inspect, edit, or delete a workspace by registered name or by `.code-workspace` path.
 - Choose between direct `folders` mode and managed `symlink` dock mode.
+- Add or remove one or more project folders while synchronizing an existing dock safely.
 - Install global Zed tasks backed by the packaged task templates.
 - Rebuild dock roots safely using `.zwd-lock.json` ownership locks.
 - Use the short `zwd` command for repeated terminal workflows.
@@ -68,14 +69,17 @@ List registered workspaces:
 zwd list
 ```
 
-Add another folder later by recreating the workspace with the complete folder list:
+Add another folder later:
 
 ```bash
-zwd create ../api ../web ../docs --name work --force
+zwd add ../docs --workspace work
 ```
 
-> [!IMPORTANT]
-> There is no incremental `add` command yet. Recreate the workspace with `--force` when the folder list changes.
+Remove a folder without deleting the project directory:
+
+```bash
+zwd remove ../docs --workspace work
+```
 
 ## Usage
 
@@ -131,6 +135,46 @@ zwd open work --zed-bin /Applications/Zed.app/Contents/MacOS/cli
 
 For a simple argument such as `work`, registered workspaces take precedence over a same-name file or directory in the current directory. Use an explicit path such as `./work.code-workspace` when you want to open a local file.
 
+### Maintain a Workspace
+
+Add one or more folders to a workspace:
+
+```bash
+zwd add ../api ../web --workspace work
+```
+
+Remove one or more folders by canonical path. The projects themselves are never deleted:
+
+```bash
+zwd remove ../legacy ../docs --workspace work
+```
+
+When the current directory is the root of a managed dock, `add` and `remove` infer the owning workspace from `.zwd-lock.json`, so the flag is optional:
+
+```bash
+zwd add ../docs
+zwd remove ../legacy
+```
+
+Both commands are idempotent. Adding an existing folder or removing an absent one reports that state without changing the workspace or dock. A dock that already exists is reconciled immediately and incrementally; a dock that does not exist is still materialized by the next `zwd open` in symlink mode.
+
+Inspect a workspace and its dock health:
+
+```bash
+zwd status work
+```
+
+`status` reports the workspace path, registration, mode, resolved folders, and dock state. It exits unsuccessfully after reporting an unresolvable folder or an unsafe dock. A missing dock is normal until symlink mode has opened the workspace.
+
+Preview workspace deletion, then confirm it:
+
+```bash
+zwd delete work
+zwd delete work --force
+```
+
+`delete` accepts a registered name or an explicit `.code-workspace` path. Without `--force`, it only lists the workspace file and owned dock that would be removed. With `--force`, it removes the workspace file and only its validated, lock-owned dock. It never deletes project folders, does not close applications using the dock, and refuses to delete while its own current directory is that dock root.
+
 ## Zed Tasks
 
 Install global Zed tasks:
@@ -185,6 +229,8 @@ Registered workspaces are stored under the user config directory at `zwd/workspa
 
 The `create` command accepts one or more folder paths as positional arguments. It writes `symlink` mode unless `--mode folders` is passed. Created workspaces store canonical absolute folder paths resolved from the current working directory.
 
+`add` and `remove` preserve all unrelated JSON properties in an existing workspace file, including Zed settings and tasks, while changing only `folders`. `remove` may leave `folders` empty; use `delete` when the workspace file and its dock should be removed.
+
 ## Schemas
 
 JSON Schemas are published under `resources/schemas/` using JSON Schema Draft 2020-12:
@@ -199,6 +245,7 @@ The schemas are documentation, editor, and test resources. Runtime parsing still
 - Dock directories live under the platform cache directory at `zwd/docks/`.
 - Each managed dock contains `.zwd-lock.json`.
 - Rebuilds modify only lock-owned docks.
+- Incremental edits reconcile only changed symlinks in an existing owned dock.
 - Existing dock directories without a valid lock abort.
 - Unmanaged files inside a lock-owned dock abort.
 - Project folders are symlinked, not copied.
@@ -207,6 +254,7 @@ The schemas are documentation, editor, and test resources. Runtime parsing still
 - `folders[].name` cannot use reserved dock metadata names such as `.zwd-lock.json`.
 - Registered workspace names must be one filesystem entry name without `.code-workspace`; `open` accepts the name with or without that extension.
 - Registered workspace creation does not overwrite an existing workspace unless `--force` is passed.
+- `delete --force` never bypasses dock ownership or unmanaged-content checks.
 
 ## Development
 

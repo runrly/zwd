@@ -8,7 +8,7 @@ mod workspace;
 mod zed;
 
 use cli::{Cli, Commands};
-use error::Result;
+use error::{AppError, Result};
 
 pub fn run(cli: Cli) -> Result<()> {
     match cli.command {
@@ -54,6 +54,18 @@ pub fn run(cli: Cli) -> Result<()> {
 
             zed::open_zed(&zed_bin, target, reuse)
         }
+        Commands::Add { paths, workspace } => edit_workspace(
+            workspace.as_deref(),
+            &paths,
+            workspace::WorkspaceEditOperation::Add,
+        ),
+        Commands::Remove { paths, workspace } => edit_workspace(
+            workspace.as_deref(),
+            &paths,
+            workspace::WorkspaceEditOperation::Remove,
+        ),
+        Commands::Delete { workspace, force } => delete_workspace(&workspace, force),
+        Commands::Status { workspace } => show_workspace_status(workspace.as_deref()),
         Commands::Install {
             command,
             tasks_path,
@@ -66,4 +78,155 @@ pub fn run(cli: Cli) -> Result<()> {
             Ok(())
         }
     }
+}
+
+fn edit_workspace(
+    reference: Option<&std::path::Path>,
+    paths: &[std::path::PathBuf],
+    operation: workspace::WorkspaceEditOperation,
+) -> Result<()> {
+    let workspace_path = resolve_edit_workspace(reference)?;
+    let edit = workspace::prepare_workspace_edit(&workspace_path, paths, operation)?;
+
+    if edit.changed().is_empty() {
+        print_edit_result(operation, edit.changed(), edit.unchanged(), false);
+        return Ok(());
+    }
+
+    let dock = dock::validate_existing_dock(edit.path())?;
+    let needs_dock_validation = edit.mode()? == cli::Mode::Symlink || dock.is_some();
+    let dock_folders = needs_dock_validation
+        .then(|| edit.resolved_dock_folders())
+        .transpose()?;
+
+    edit.write()?;
+    let dock_synchronized = match dock_folders {
+        Some(folders) => match dock::sync_existing_dock(edit.path(), &folders) {
+            Ok(synchronized) => synchronized,
+            Err(error) => {
+                let _ = edit.restore();
+                return Err(error);
+            }
+        },
+        None => false,
+    };
+    print_edit_result(
+        operation,
+        edit.changed(),
+        edit.unchanged(),
+        dock_synchronized,
+    );
+
+    Ok(())
+}
+
+fn resolve_edit_workspace(reference: Option<&std::path::Path>) -> Result<std::path::PathBuf> {
+    match reference {
+        Some(reference) => workspace::resolve_workspace_reference(reference),
+        None => dock::infer_workspace_from_current_dock(),
+    }
+}
+
+fn print_edit_result(
+    operation: workspace::WorkspaceEditOperation,
+    changed: &[std::path::PathBuf],
+    unchanged: &[std::path::PathBuf],
+    dock_synchronized: bool,
+) {
+    let action = match operation {
+        workspace::WorkspaceEditOperation::Add => "added",
+        workspace::WorkspaceEditOperation::Remove => "removed",
+    };
+    let unchanged_action = match operation {
+        workspace::WorkspaceEditOperation::Add => "already present",
+        workspace::WorkspaceEditOperation::Remove => "already absent",
+    };
+
+    for path in changed {
+        println!("{action}\t{}", path.display());
+    }
+    for path in unchanged {
+        println!("{unchanged_action}\t{}", path.display());
+    }
+    if dock_synchronized {
+        println!("dock synchronized");
+    }
+}
+
+fn delete_workspace(reference: &std::path::Path, force: bool) -> Result<()> {
+    let workspace = workspace::resolve_workspace_reference(reference)?;
+    workspace::read_workspace_file(&workspace)?;
+    let workspace_path = std::fs::canonicalize(&workspace)?;
+    let dock = dock::validate_existing_dock(&workspace_path)?;
+
+    println!("workspace\t{}", workspace_path.display());
+    match &dock {
+        Some(path) => println!("dock\t{}", path.display()),
+        None => println!("dock\tnot materialized"),
+    }
+
+    if !force {
+        println!("dry-run\tpass --force to delete");
+        return Ok(());
+    }
+    if dock::current_directory_is_dock(&workspace_path)? {
+        return Err(AppError::CurrentDirectoryIsDock {
+            path: workspace_path,
+        });
+    }
+
+    if dock.is_some() {
+        dock::remove_owned_dock(&workspace_path)?;
+    }
+    std::fs::remove_file(workspace_path)?;
+    println!("deleted");
+
+    Ok(())
+}
+
+fn show_workspace_status(reference: Option<&std::path::Path>) -> Result<()> {
+    let workspace_path = resolve_edit_workspace(reference)?;
+    let status = workspace::workspace_status(&workspace_path)?;
+    println!("workspace\t{}", status.path.display());
+    println!(
+        "registration\t{}",
+        if status.registered {
+            "registered"
+        } else {
+            "explicit"
+        }
+    );
+    println!(
+        "mode\t{}",
+        match status.mode {
+            cli::Mode::Folders => "folders",
+            cli::Mode::Symlink => "symlink",
+        }
+    );
+
+    let mut unhealthy = None;
+    for folder in &status.folders {
+        match &folder.target {
+            Ok(target) => println!("folder\t{}", target.display()),
+            Err(reason) => {
+                println!("folder\tunhealthy\t{}\t{reason}", folder.path.display());
+                unhealthy = Some(reason.clone());
+            }
+        }
+    }
+
+    match dock::dock_status(&status.path)? {
+        dock::DockStatus::Absent { path } => println!("dock\tabsent\t{}", path.display()),
+        dock::DockStatus::Healthy { path } => println!("dock\thealthy\t{}", path.display()),
+        dock::DockStatus::Unhealthy { path, reason } => {
+            println!("dock\tunhealthy\t{}\t{reason}", path.display());
+            unhealthy = Some(reason);
+        }
+    }
+
+    if let Some(reason) = unhealthy {
+        return Err(AppError::WorkspaceStatusUnhealthy { reason });
+    }
+
+    Ok(())
 }
