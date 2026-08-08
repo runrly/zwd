@@ -20,6 +20,10 @@ _Avoid_: package name as command
 A `.code-workspace` file describing one or more project folders for a Zed session. In the MVP, each workspace file has zero or one `zwd` configuration object.
 _Avoid_: Project file, session file
 
+**Workspace membership**:
+The association between a workspace file and a canonical project folder. Membership changes never delete the project folder itself.
+_Avoid_: Workspace item, workspace entry
+
 **Registered workspace**:
 A workspace file stored in the user's config directory under `zwd/workspaces/`. Registered workspaces can be opened by name and are listed by `zwd list`.
 _Avoid_: Saved project, cached workspace
@@ -40,6 +44,10 @@ _Avoid_: Temporary copy, workspace copy, virtual workspace
 The JSON ownership record stored as `.zwd-lock.json` inside a symlink dock. A dock lock identifies the owning workspace file and the symlink entries managed by Zed Workspace Dock.
 _Avoid_: Marker, ownership marker, cache manifest
 
+**Dock reconciliation**:
+The safe in-place synchronization of an existing owned symlink dock with its workspace membership.
+_Avoid_: Dock refresh, cache rebuild
+
 **Dock link name**:
 The single filesystem entry name used for one project link inside a symlink dock. A dock link name is a name, not a path.
 _Avoid_: Link path, relative link target
@@ -47,6 +55,14 @@ _Avoid_: Link path, relative link target
 **Folder mode**:
 Workspace opening mode where Zed receives the resolved project folder paths directly.
 _Avoid_: Standard mode, normal mode
+
+**Workspace status**:
+A read-only report of a workspace's registration, mode, folder resolution, and dock health.
+_Avoid_: Workspace inspection, workspace health check
+
+**Deletion preview**:
+The non-mutating result of invoking `delete` without confirmation, showing the workspace and owned dock that would be removed.
+_Avoid_: Delete dry run, deletion plan
 
 **Dock mode**:
 Workspace opening mode where Zed receives the symlink dock root instead of the individual project folder paths.
@@ -86,6 +102,10 @@ Older planning text may use pluralized product names, describe `zwd` as an alias
 - `create <paths>... --name <name> --output <dir>` writes an explicit workspace output in the output directory and prints its canonical path.
 - `create` defaults to dock mode. `--mode folders` creates a folder-mode workspace.
 - Created workspaces store folder paths as canonical absolute paths resolved from the current working directory at creation time.
+- `add <paths>... --workspace <workspace>` and `remove <paths>... --workspace <workspace>` change workspace membership. The workspace flag is optional only from the root of a valid owned dock.
+- `add` and `remove` are idempotent and synchronize an existing dock incrementally. They do not create a dock that does not already exist.
+- `delete <workspace>` prints a deletion preview; `delete <workspace> --force` removes the workspace file and its valid owned dock, never its project folders.
+- `status [workspace]` reports workspace and dock health. An absent dock is normal, while unresolvable folders or unsafe docks are unhealthy states.
 - `open <simple-name>` prefers a registered workspace over a same-name file or directory in the current working directory. Use an explicit path such as `./work.code-workspace` when the local file is intended.
 - `list` prints registered workspaces as `name<TAB>path`.
 - Workspace schemas document the current parser behavior: `folders` defaults to an empty list when absent, and `zwd.mode` is required only when `zwd` exists.

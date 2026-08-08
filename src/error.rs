@@ -48,6 +48,12 @@ pub enum AppError {
     WorkspaceAlreadyExists { path: PathBuf },
     #[error("registered workspace not found: {name}")]
     RegisteredWorkspaceNotFound { name: String },
+    #[error("workspace is required outside the root of a managed dock; pass --workspace")]
+    WorkspaceReferenceRequired,
+    #[error("current directory is the dock being deleted; leave {path} before retrying")]
+    CurrentDirectoryIsDock { path: PathBuf },
+    #[error("workspace status is unhealthy: {reason}")]
+    WorkspaceStatusUnhealthy { reason: String },
     #[error("could not generate an unused workspace name")]
     WorkspaceNameGenerationExhausted,
     #[error(transparent)]
