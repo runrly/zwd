@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1
+
+### Patch Changes
+
+- e28355ae4b: bump release-plz/action (#28)
+
 ## 0.3.0
 
 ### Minor Changes
