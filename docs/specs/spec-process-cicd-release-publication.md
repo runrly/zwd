@@ -1,8 +1,8 @@
 ---
 title: CI/CD Workflow Specification - Manual Release Publication
-version: 1.2
+version: 1.3
 date_created: 2026-07-18
-last_updated: 2026-07-18
+last_updated: 2026-10-31
 owner: Zed Workspace Dock maintainers
 tags: [process, cicd, github-actions, release, cargo-dist, approval]
 ---
@@ -80,6 +80,7 @@ graph TD
 
 - Publication dispatches for the same tag are queued; a second run never overlaps the first.
 - Runners require network access for tool installation, dependencies, artifact storage, and release upload.
+- Apple Silicon builds use `macos-15`. The workflow maps `macos-14` entries from older tagged cargo-dist configurations to `macos-15`, preserving the selected source tag while avoiding the retired runner image.
 - The release approval must be granted before any distribution planning or building for a manual dispatch.
 
 ## Error Handling Strategy
@@ -124,6 +125,7 @@ graph TD
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.3 | 2026-10-31 | Use macos-15 for Apple Silicon, including plans generated from older signed tags. |
 | 1.2 | 2026-07-18 | Renamed the approval environment to release-publication. |
 | 1.1 | 2026-07-18 | Added per-tag queued publication and dedicated validation responsibility. |
 | 1.0 | 2026-07-18 | Initial specification. |

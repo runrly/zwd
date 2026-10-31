@@ -113,7 +113,8 @@ jobs:
       # - 1 "global" task that builds universal installers
       # - N "local" tasks that build each platform's binaries and platform-specific installers
       matrix: ${{ fromJson(needs.plan.outputs.val).ci.github.artifacts_matrix }}
-    runs-on: ${{ matrix.runner }}
+    # Existing signed tags can still contain cargo-dist's retired runner default.
+    runs-on: ${{ matrix.runner == 'macos-14' && 'macos-15' || matrix.runner }}
     timeout-minutes: 60
     container: ${{ matrix.container && matrix.container.image || null }}
     env:
