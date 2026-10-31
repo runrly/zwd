@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.0
+
+### Minor Changes
+
+- 452905f727: add `zwd sync [workspace]` to recover missing managed links and reconcile workspace configuration without opening Zed (#37).
+
+### Changed
+
+- `delete --force` now removes the entire validated owned dock, including extra files, directories, and manual symlinks. Symlink targets remain intact; `delete` without `--force` previews the removal (#37).
+
+### Patch Changes
+
+- e28355ae4b: bump release-plz/action (#28)
+- 1f76c4e983: bump release-plz/action (#32)
+- 452905f727: preserve extra dock content during opening and reconciliation, and support case-only managed link renames (#37, fixes #35).
+
 ## 0.3.0
 
 ### Minor Changes
