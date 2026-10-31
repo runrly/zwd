@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1
+
+### Patch Changes
+
+- e28355ae4b: bump release-plz/action (#28)
+- 1f76c4e983: bump release-plz/action (#32)
+- 452905f727: preserve unmanaged dock content and add sync (#37)
+
 ## 0.3.0
 
 ### Minor Changes
