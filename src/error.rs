@@ -48,7 +48,9 @@ pub enum AppError {
     WorkspaceAlreadyExists { path: PathBuf },
     #[error("registered workspace not found: {name}")]
     RegisteredWorkspaceNotFound { name: String },
-    #[error("workspace is required outside the root of a managed dock; pass --workspace")]
+    #[error(
+        "workspace is required outside the root of a managed dock; provide a workspace reference (sync/status: positional; add/remove: --workspace)"
+    )]
     WorkspaceReferenceRequired,
     #[error("current directory is the dock being deleted; leave {path} before retrying")]
     CurrentDirectoryIsDock { path: PathBuf },
@@ -64,8 +66,18 @@ pub enum AppError {
     DockMissingLock { path: PathBuf },
     #[error("unsupported dock lock version: {version}")]
     UnsupportedDockLockVersion { version: u8 },
-    #[error("dock contains unmanaged content: {path}")]
-    UnmanagedDockContent { path: PathBuf },
+    #[error("invalid dock lock at {path}: {reason}")]
+    InvalidDockLock { path: PathBuf, reason: &'static str },
+    #[error("dock is out of sync at {path}; run zwd sync <workspace>")]
+    DockOutOfSync { path: PathBuf },
+    #[error(
+        "managed dock link {path} points to {actual}, expected {expected}; restore the link manually"
+    )]
+    DockLinkTargetMismatch {
+        path: PathBuf,
+        expected: PathBuf,
+        actual: PathBuf,
+    },
     #[error("managed dock entry is not a symlink: {path}")]
     ManagedDockEntryNotSymlink { path: PathBuf },
     #[error("dock lock belongs to {lock_workspace_path}, not {workspace_path}")]

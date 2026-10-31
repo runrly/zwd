@@ -21,6 +21,7 @@ fn run_with_home_and_cwd(args: &[&str], home: &Path, cwd: &Path) -> Result<Outpu
         .args(args)
         .env("HOME", home)
         .env("XDG_CONFIG_HOME", home.join(".config"))
+        .env("XDG_CACHE_HOME", home.join(".cache"))
         .current_dir(cwd)
         .output()?)
 }
@@ -811,6 +812,7 @@ fn remove_updates_dock_without_deleting_project_directories() -> Result<(), Box<
         ),
     )?;
     let dock = open_dock(&workspace, &home, &project_root)?;
+    fs::write(dock.join("notes.txt"), "keep")?;
     let workspace_arg = workspace.to_string_lossy().into_owned();
     let docs_arg = docs.to_string_lossy().into_owned();
     let missing_arg = missing.to_string_lossy().into_owned();
@@ -835,13 +837,13 @@ fn remove_updates_dock_without_deleting_project_directories() -> Result<(), Box<
     assert_eq!(folder_paths(&workspace)?.len(), 1);
     assert!(!dock.join("docs").exists());
     assert!(docs.is_dir());
+    assert_eq!(fs::read_to_string(dock.join("notes.txt"))?, "keep");
 
     Ok(())
 }
 
 #[test]
-fn add_aborts_without_changing_workspace_when_dock_has_unmanaged_content()
--> Result<(), Box<dyn Error>> {
+fn add_preserves_unmanaged_content() -> Result<(), Box<dyn Error>> {
     let temp = tempdir()?;
     let home = temp.path().join("home");
     let project_root = temp.path().join("projects");
@@ -859,7 +861,6 @@ fn add_aborts_without_changing_workspace_when_dock_has_unmanaged_content()
     )?;
     let dock = open_dock(&workspace, &home, &project_root)?;
     fs::write(dock.join("notes.txt"), "do not touch")?;
-    let before = fs::read_to_string(&workspace)?;
     let workspace_arg = workspace.to_string_lossy().into_owned();
     let docs_arg = docs.to_string_lossy().into_owned();
 
@@ -869,9 +870,13 @@ fn add_aborts_without_changing_workspace_when_dock_has_unmanaged_content()
         &project_root,
     )?;
 
-    assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("unmanaged content"));
-    assert_eq!(fs::read_to_string(&workspace)?, before);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read_to_string(dock.join("notes.txt"))?, "do not touch");
+    assert!(dock.join("docs").is_dir());
 
     Ok(())
 }
@@ -981,6 +986,9 @@ fn status_reports_healthy_and_unhealthy_dock_states() -> Result<(), Box<dyn Erro
     assert!(stdout_line(&healthy).contains("healthy"));
 
     fs::write(dock.join("notes.txt"), "unmanaged")?;
+    let extras = run_with_home_and_cwd(&["status", &workspace_arg], &home, &project_root)?;
+    assert!(extras.status.success());
+    fs::remove_file(dock.join("api"))?;
     let unhealthy = run_with_home_and_cwd(&["status", &workspace_arg], &home, &project_root)?;
 
     assert!(!unhealthy.status.success());
@@ -1113,5 +1121,227 @@ fn status_lists_missing_workspace_folders_before_returning_an_error() -> Result<
     assert!(!output.status.success());
     assert!(stdout_line(&output).contains("folder\tunhealthy"));
 
+    Ok(())
+}
+
+#[test]
+fn sync_creates_recovers_and_reconciles_without_opening_zed() -> Result<(), Box<dyn Error>> {
+    let temp = tempdir()?;
+    let api = temp.path().join("api");
+    let web = temp.path().join("web");
+    fs::create_dir(&api)?;
+    fs::create_dir(&web)?;
+    let workspace = temp.path().join("work.code-workspace");
+    let document = serde_json::json!({"folders":[{"path":api}], "zwd":{"mode":"symlink"}});
+    fs::write(&workspace, document.to_string())?;
+    let arg = workspace.to_string_lossy();
+    let sync = run_with_home_and_cwd(&["sync", &arg], temp.path(), temp.path())?;
+    assert!(
+        sync.status.success(),
+        "{}",
+        String::from_utf8_lossy(&sync.stderr)
+    );
+    let dock = open_dock(&workspace, temp.path(), temp.path())?;
+    fs::create_dir(dock.join(".dirac"))?;
+    fs::write(dock.join(".dirac/config.json"), "{}")?;
+    fs::write(dock.join("notes.txt"), "keep")?;
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&api, dock.join("manual-link"))?;
+    fs::remove_file(dock.join("api"))?;
+    let repaired = run_with_home_and_cwd(&["sync"], temp.path(), &dock)?;
+    assert!(
+        repaired.status.success(),
+        "{}",
+        String::from_utf8_lossy(&repaired.stderr)
+    );
+    assert!(dock.join("api").is_dir());
+    let before = fs::read(&workspace)?;
+    let lock = fs::read(dock.join(".zwd-lock.json"))?;
+    let again = run_with_home_and_cwd(&["sync", &arg], temp.path(), temp.path())?;
+    assert!(again.status.success());
+    assert_eq!(fs::read(&workspace)?, before);
+    assert_eq!(fs::read(dock.join(".zwd-lock.json"))?, lock);
+    fs::write(
+        &workspace,
+        serde_json::json!({"folders":[{"path":web}], "zwd":{"mode":"symlink"}}).to_string(),
+    )?;
+    open_dock(&workspace, temp.path(), temp.path())?;
+    assert!(!dock.join("api").exists());
+    assert!(dock.join("web").is_dir());
+    assert_eq!(fs::read_to_string(dock.join("notes.txt"))?, "keep");
+    assert!(dock.join(".dirac/config.json").exists());
+    assert!(api.is_dir());
+    #[cfg(unix)]
+    assert_eq!(fs::read_link(dock.join("manual-link"))?, api);
+    let mut folders_document: Value = serde_json::from_slice(&fs::read(&workspace)?)?;
+    folders_document["zwd"]["mode"] = serde_json::json!("folders");
+    fs::write(&workspace, folders_document.to_string())?;
+    fs::remove_file(dock.join("web"))?;
+    let folders_sync = run_with_home_and_cwd(&["sync", &arg], temp.path(), temp.path())?;
+    assert!(folders_sync.status.success());
+    assert!(dock.join("web").is_dir());
+    fs::remove_dir(&web)?;
+    let deleted = run_with_home_and_cwd(&["delete", &arg, "--force"], temp.path(), temp.path())?;
+    assert!(deleted.status.success());
+    assert!(api.is_dir());
+    Ok(())
+}
+
+#[test]
+fn sync_folders_without_dock_is_a_noop_and_requires_reference_outside_dock()
+-> Result<(), Box<dyn Error>> {
+    let temp = tempdir()?;
+    let workspace = temp.path().join("work.code-workspace");
+    fs::write(&workspace, r#"{"folders":[],"zwd":{"mode":"folders"}}"#)?;
+    let arg = workspace.to_string_lossy();
+    let output = run_with_home_and_cwd(&["sync", &arg], temp.path(), temp.path())?;
+    assert!(output.status.success());
+    assert!(stdout_line(&output).contains("no dock"));
+    let missing = run_with_home_and_cwd(&["sync"], temp.path(), temp.path())?;
+    assert!(!missing.status.success());
+    assert!(String::from_utf8_lossy(&missing.stderr).contains("workspace"));
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn delete_removes_extras_without_following_any_symlinks() -> Result<(), Box<dyn Error>> {
+    let temp = tempdir()?;
+    let project = temp.path().join("api");
+    fs::create_dir(&project)?;
+    fs::write(project.join("sentinel"), "keep")?;
+    let workspace = temp.path().join("work.code-workspace");
+    fs::write(
+        &workspace,
+        serde_json::json!({"folders":[{"path":project}],"zwd":{"mode":"symlink"}}).to_string(),
+    )?;
+    let dock = open_dock(&workspace, temp.path(), temp.path())?;
+    fs::create_dir(dock.join(".dirac"))?;
+    fs::write(dock.join(".dirac/config"), "remove")?;
+    std::os::unix::fs::symlink(&project, dock.join("extra"))?;
+    std::os::unix::fs::symlink(&project, dock.join(".dirac/nested-link"))?;
+    let arg = workspace.to_string_lossy();
+    let preview = run_with_home_and_cwd(&["delete", &arg], temp.path(), temp.path())?;
+    assert!(preview.status.success());
+    assert!(dock.join(".dirac/config").exists());
+    let inside = run_with_home_and_cwd(
+        &["delete", &arg, "--force"],
+        temp.path(),
+        &dock.join(".dirac"),
+    )?;
+    assert!(!inside.status.success());
+    assert!(workspace.exists());
+    let deleted = run_with_home_and_cwd(&["delete", &arg, "--force"], temp.path(), temp.path())?;
+    assert!(
+        deleted.status.success(),
+        "{}",
+        String::from_utf8_lossy(&deleted.stderr)
+    );
+    assert!(!dock.exists());
+    assert!(!workspace.exists());
+    assert_eq!(fs::read_to_string(project.join("sentinel"))?, "keep");
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn dock_conflicts_and_invalid_ownership_fail_without_mutation() -> Result<(), Box<dyn Error>> {
+    for case in [
+        "target",
+        "directory",
+        "collision",
+        "lock-symlink",
+        "root-symlink",
+        "owner",
+        "traversal",
+        "duplicate",
+        "relative",
+        "version",
+    ] {
+        let temp = tempdir()?;
+        let api = temp.path().join("api");
+        let web = temp.path().join("web");
+        fs::create_dir(&api)?;
+        fs::create_dir(&web)?;
+        fs::write(api.join("sentinel"), "keep")?;
+        let workspace = temp.path().join("work.code-workspace");
+        let document = serde_json::json!({"folders":[{"path":api}],"zwd":{"mode":"symlink"}});
+        fs::write(&workspace, document.to_string())?;
+        let dock = open_dock(&workspace, temp.path(), temp.path())?;
+        let lock_path = dock.join(".zwd-lock.json");
+        let mut lock: Value = serde_json::from_slice(&fs::read(&lock_path)?)?;
+        match case {
+            "target" => {
+                fs::remove_file(dock.join("api"))?;
+                std::os::unix::fs::symlink(&web, dock.join("api"))?;
+            }
+            "directory" => {
+                fs::remove_file(dock.join("api"))?;
+                fs::create_dir(dock.join("api"))?;
+            }
+            "collision" => {
+                fs::write(
+                    &workspace,
+                    serde_json::json!({"folders":[{"path":web}],"zwd":{"mode":"symlink"}})
+                        .to_string(),
+                )?;
+                std::os::unix::fs::symlink(&web, dock.join("web"))?;
+            }
+            "lock-symlink" => {
+                let outside = temp.path().join("external-lock");
+                fs::rename(&lock_path, &outside)?;
+                std::os::unix::fs::symlink(outside, &lock_path)?;
+            }
+            "root-symlink" => {
+                let outside = temp.path().join("external-dock");
+                fs::rename(&dock, &outside)?;
+                std::os::unix::fs::symlink(outside, &dock)?;
+            }
+            "owner" => {
+                lock["workspace_path"] =
+                    serde_json::json!(temp.path().join("other.code-workspace"));
+            }
+            "traversal" => {
+                lock["links"][0]["name"] = serde_json::json!("../api");
+            }
+            "duplicate" => {
+                let link = lock["links"][0].clone();
+                lock["links"].as_array_mut().unwrap().push(link);
+            }
+            "relative" => {
+                lock["links"][0]["target"] = serde_json::json!("../api");
+            }
+            "version" => {
+                lock["version"] = serde_json::json!(2);
+            }
+            _ => unreachable!(),
+        }
+        if matches!(
+            case,
+            "owner" | "traversal" | "duplicate" | "relative" | "version"
+        ) {
+            fs::write(&lock_path, lock.to_string())?;
+        }
+        let before = fs::read(&lock_path)?;
+        let workspace_before = fs::read(&workspace)?;
+        let arg = workspace.to_string_lossy();
+        for command in ["sync", "open"] {
+            let output = run_with_home_and_cwd(&[command, &arg], temp.path(), temp.path())?;
+            assert!(
+                !output.status.success(),
+                "{case}: {command} unexpectedly succeeded"
+            );
+            assert_eq!(fs::read(&lock_path)?, before, "{case}");
+            assert_eq!(fs::read(&workspace)?, workspace_before);
+            assert_eq!(fs::read_to_string(api.join("sentinel"))?, "keep");
+        }
+        if !matches!(case, "target" | "directory" | "collision") {
+            let output =
+                run_with_home_and_cwd(&["delete", &arg, "--force"], temp.path(), temp.path())?;
+            assert!(!output.status.success(), "{case}: unsafe delete");
+            assert_eq!(fs::read(&lock_path)?, before);
+        }
+        assert!(dock.join("api").symlink_metadata().is_ok());
+    }
     Ok(())
 }
