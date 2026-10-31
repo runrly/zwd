@@ -27,7 +27,7 @@ Zed can open multiple folders directly, but its terminal still benefits from a s
 - Choose between direct `folders` mode and managed `symlink` dock mode.
 - Add or remove one or more project folders while synchronizing an existing dock safely.
 - Install global Zed tasks backed by the packaged task templates.
-- Rebuild dock roots safely using `.zwd-lock.json` ownership locks.
+- Reconcile dock links safely using `.zwd-lock.json` ownership locks, preserving extra files and manual symlinks.
 - Use the short `zwd` command for repeated terminal workflows.
 
 ## Install
@@ -158,13 +158,26 @@ zwd remove ../legacy
 
 Both commands are idempotent. Adding an existing folder or removing an absent one reports that state without changing the workspace or dock. A dock that already exists is reconciled immediately and incrementally; a dock that does not exist is still materialized by the next `zwd open` in symlink mode.
 
+Synchronize a dock without opening Zed:
+
+```bash
+zwd sync work
+zwd sync ./work.code-workspace
+# From the root of a managed dock:
+zwd sync
+```
+
+`open` and `sync` recover missing managed links and reconcile changes from the `.code-workspace` configuration. Correct links remain in place. Files, directories such as `.dirac`, and manually added symlinks are preserved without being adopted into the lock. A changed managed symlink target, a managed link replaced by a real file/directory, or an unmanaged entry occupying a required link name causes an error before link changes. Restore or move that conflicting entry manually before retrying.
+
+`sync` creates an absent dock for a symlink-mode workspace. For a folder-mode workspace it synchronizes an existing dock, or succeeds with a message when there is no dock. Workspace inference uses only the lock in the current dock root; it does not search parent directories. The workspace file remains the source of truth, so synchronization does not restore projects removed from that file.
+
 Inspect a workspace and its dock health:
 
 ```bash
 zwd status work
 ```
 
-`status` reports the workspace path, registration, mode, resolved folders, and dock state. It exits unsuccessfully after reporting an unresolvable folder or an unsafe dock. A missing dock is normal until symlink mode has opened the workspace.
+`status` reports the workspace path, registration, mode, resolved folders, and dock state without changing files. Extra dock content is healthy; missing managed links, changed destinations, stale lock membership, unresolvable folders, or invalid ownership are unhealthy. Use `sync` to recover missing links or reconcile configuration changes. A missing dock is normal before the first `open` or `sync` in symlink mode.
 
 Preview workspace deletion, then confirm it:
 
@@ -173,7 +186,7 @@ zwd delete work
 zwd delete work --force
 ```
 
-`delete` accepts a registered name or an explicit `.code-workspace` path. Without `--force`, it only lists the workspace file and owned dock that would be removed. With `--force`, it removes the workspace file and only its validated, lock-owned dock. It never deletes project folders, does not close applications using the dock, and refuses to delete while its own current directory is that dock root.
+`delete` accepts a registered name or an explicit `.code-workspace` path. Without `--force`, it previews the workspace file and owned dock and states that all local dock contents would be removed. With `--force`, it removes the entire validated, lock-owned dock, including extra files, nested directories, and manual symlinks, then removes the workspace file. Symlinks are unlinked without following their targets, so linked project folders are preserved. Files stored only inside the dock are deleted. The command does not close applications using the dock and refuses to delete from the dock root or a real subdirectory beneath it. Missing project targets do not prevent deletion. Filesystem errors can interrupt deletion; the workspace file is kept if dock removal fails.
 
 ## Zed Tasks
 
@@ -247,14 +260,16 @@ The schemas are documentation, editor, and test resources. Runtime parsing still
 - Rebuilds modify only lock-owned docks.
 - Incremental edits reconcile only changed symlinks in an existing owned dock.
 - Existing dock directories without a valid lock abort.
-- Unmanaged files inside a lock-owned dock abort.
+- Extra files and manual symlinks are preserved during opening and reconciliation; `delete --force` removes all local dock contents.
+- Existing dock roots must be real directories and locks must be regular files, not symlinks.
+- Managed link conflicts abort synchronization before any link changes.
 - Project folders are symlinked, not copied.
 - Symlink targets are not deleted or mutated.
 - `folders[].name` must be one filesystem entry name, not a path.
 - `folders[].name` cannot use reserved dock metadata names such as `.zwd-lock.json`.
 - Registered workspace names must be one filesystem entry name without `.code-workspace`; `open` accepts the name with or without that extension.
 - Registered workspace creation does not overwrite an existing workspace unless `--force` is passed.
-- `delete --force` never bypasses dock ownership or unmanaged-content checks.
+- `delete --force` never bypasses dock ownership checks; it confirms deletion of the entire owned dock.
 
 ## Development
 
