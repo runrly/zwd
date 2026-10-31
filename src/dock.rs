@@ -219,6 +219,9 @@ fn reconcile_dock(
 ) -> Result<()> {
     let lock = validate_owned_dock(dock_root, workspace_path)?;
     validate_managed_links(dock_root, &lock)?;
+    let entry_names = fs::read_dir(dock_root)?
+        .map(|entry| entry.map(|entry| entry.file_name()))
+        .collect::<std::io::Result<HashSet<_>>>()?;
     let mut changes = Vec::new();
     for link in &lock.links {
         let path = dock_root.join(&link.name);
@@ -241,10 +244,21 @@ fn reconcile_dock(
             .links
             .iter()
             .any(|link| link.name == folder.name.as_str());
-        if present && !managed {
+        // A successful lookup without this exact directory entry spelling can be
+        // a case-insensitive alias of an old managed name scheduled for removal.
+        // An actual extra entry with the desired spelling must remain a conflict,
+        // even when its symlink points to the same project.
+        let aliases_managed = present
+            && !managed
+            && !entry_names.contains(std::ffi::OsStr::new(folder.name.as_str()))
+            && lock
+                .links
+                .iter()
+                .any(|link| link.name.to_lowercase() == folder.name.as_str().to_lowercase());
+        if present && !managed && !aliases_managed {
             return Err(AppError::DockLinkPathExists { path });
         }
-        if !present {
+        if !present || aliases_managed {
             changes.push(LinkChange {
                 path,
                 previous: None,

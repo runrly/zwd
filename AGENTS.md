@@ -19,7 +19,7 @@ Use this file as the local operating guide for AI agents working in this reposit
   - Zed task templates come from `resources/zed-tasks.json`.
   - JSON Schemas live under `resources/schemas/` and are documentation/editor/test resources, not runtime validators.
 
-Windows dock mode uses directory symbolic links and may require Developer Mode or symlink privileges. CI runs tests on Linux and checks Windows compilation.
+Windows dock mode uses directory symbolic links and may require Developer Mode or symlink privileges. CI runs the full tests on Linux, case-only link rename regressions on macOS, and checks Windows compilation.
 
 ## Repository Map
 

@@ -10,6 +10,14 @@ permissions:
   contents: read
 
 jobs:
+  case-only-renames:
+    name: Case-only link renames (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Test case-only link renames on a case-insensitive filesystem
+        run: cargo test --test cli case_only --locked
+
   rust:
     name: Rust
     runs-on: ubuntu-22.04

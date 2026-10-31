@@ -1345,3 +1345,88 @@ fn dock_conflicts_and_invalid_ownership_fail_without_mutation() -> Result<(), Bo
     }
     Ok(())
 }
+
+#[test]
+fn open_and_sync_reconcile_case_only_link_renames() -> Result<(), Box<dyn Error>> {
+    for command in ["open", "sync"] {
+        let temp = tempdir()?;
+        let project = temp.path().join("project");
+        fs::create_dir(&project)?;
+        fs::write(project.join("sentinel"), "keep")?;
+        let workspace = temp.path().join("work.code-workspace");
+        let mut document = serde_json::json!({
+            "folders": [{"name":"api", "path":project}],
+            "zwd": {"mode":"symlink"}
+        });
+        fs::write(&workspace, document.to_string())?;
+        let dock = open_dock(&workspace, temp.path(), temp.path())?;
+        fs::write(dock.join("notes.txt"), "keep")?;
+        // Exercise both directions, including a simultaneous target change.
+        let other = temp.path().join("other");
+        fs::create_dir(&other)?;
+        for (name, target) in [("API", &project), ("api", &other)] {
+            document["folders"][0]["name"] = serde_json::json!(name);
+            document["folders"][0]["path"] = serde_json::json!(target);
+            fs::write(&workspace, document.to_string())?;
+            let arg = workspace.to_string_lossy();
+            let args = if command == "open" {
+                vec![command, &arg, "--reuse", "--zed-bin", "/bin/echo"]
+            } else {
+                vec![command, &arg]
+            };
+            let output = run_with_home_and_cwd(&args, temp.path(), temp.path())?;
+            assert!(
+                output.status.success(),
+                "{command}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let names = fs::read_dir(&dock)?
+                .map(|entry| entry.map(|entry| entry.file_name()))
+                .collect::<Result<Vec<_>, _>>()?;
+            assert!(names.iter().any(|entry| entry == name));
+            assert!(
+                !names
+                    .iter()
+                    .any(|entry| entry == if name == "API" { "api" } else { "API" })
+            );
+            assert_eq!(fs::read_link(dock.join(name))?, target.canonicalize()?);
+            let lock: Value = serde_json::from_slice(&fs::read(dock.join(".zwd-lock.json"))?)?;
+            assert_eq!(lock["links"][0]["name"], name);
+            assert_eq!(fs::read_to_string(dock.join("notes.txt"))?, "keep");
+        }
+        assert_eq!(fs::read_to_string(project.join("sentinel"))?, "keep");
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn case_only_rename_rejects_a_separate_manual_link_to_the_same_target() -> Result<(), Box<dyn Error>>
+{
+    let temp = tempdir()?;
+    let project = temp.path().join("project");
+    fs::create_dir(&project)?;
+    let workspace = temp.path().join("work.code-workspace");
+    let mut document =
+        serde_json::json!({"folders":[{"name":"api","path":project}],"zwd":{"mode":"symlink"}});
+    fs::write(&workspace, document.to_string())?;
+    let dock = open_dock(&workspace, temp.path(), temp.path())?;
+    if dock.join("API").symlink_metadata().is_ok() {
+        // This filesystem aliases the managed entry; the rename regression test covers it.
+        return Ok(());
+    }
+    std::os::unix::fs::symlink(&project, dock.join("API"))?;
+    let original_lock = fs::read(dock.join(".zwd-lock.json"))?;
+    document["folders"][0]["name"] = serde_json::json!("API");
+    fs::write(&workspace, document.to_string())?;
+    let arg = workspace.to_string_lossy();
+    for command in ["sync", "open"] {
+        let output = run_with_home_and_cwd(&[command, &arg], temp.path(), temp.path())?;
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("already exists"));
+        assert!(dock.join("api").symlink_metadata()?.is_symlink());
+        assert!(dock.join("API").symlink_metadata()?.is_symlink());
+        assert_eq!(fs::read(dock.join(".zwd-lock.json"))?, original_lock);
+    }
+    Ok(())
+}
