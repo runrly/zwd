@@ -50,6 +50,10 @@ pub enum Commands {
         #[arg(long)]
         force: bool,
     },
+    /// Synchronize a dock without opening Zed. Infer the workspace from the dock root.
+    Sync {
+        workspace: Option<PathBuf>,
+    },
     Status {
         workspace: Option<PathBuf>,
     },

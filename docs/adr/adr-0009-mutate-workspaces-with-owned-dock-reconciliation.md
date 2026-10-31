@@ -5,14 +5,14 @@ date: "2026-08-08"
 authors: "Project maintainer"
 tags: ["architecture", "cli", "workspace", "dock", "safety"]
 supersedes: ""
-superseded_by: ""
+superseded_by: "ADR-0010 (unmanaged content and deletion policy only)"
 ---
 
 # ADR-0009: Mutate workspaces with owned dock reconciliation
 
 ## Status
 
-Accepted
+Accepted; unmanaged-content restrictions and deletion policy are superseded by ADR-0010. Other decisions remain in effect.
 
 ## Context
 

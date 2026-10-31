@@ -4,15 +4,12 @@ Zed Workspace Dock is a Rust CLI for creating and opening Zed `.code-workspace` 
 
 Use this file as the local operating guide for AI agents working in this repository. Keep changes aligned with the current CLI contract in `README.md`, the project language in `CONTEXT.md`, and the release decisions in `docs/adr/`.
 
-> [!IMPORTANT]
-> The supported way to add folders to an existing registered workspace today is to recreate it with `create ... --name <name> --force` and pass the full folder list again. Do not document or implement an incremental `add` workflow unless the CLI actually gains that command.
-
 ## Current Product Shape
 
 - Canonical product name: Zed Workspace Dock.
 - Canonical short name, repository slug, Cargo package, and installed binary: `zwd`.
 - Public command and only installed binary: `zwd`, backed by `src/bin/zwd.rs`.
-- Commands: `create`, `open`, `install`, and `list`.
+- Commands: `create`, `open`, `sync`, `add`, `remove`, `delete`, `status`, `install`, and `list`.
 - Default create mode: `symlink`.
 - Alternate open/create mode: `folders`.
 - Workspace format: strict JSON `.code-workspace` files with optional `folders` and optional `zwd`.
@@ -22,7 +19,7 @@ Use this file as the local operating guide for AI agents working in this reposit
   - Zed task templates come from `resources/zed-tasks.json`.
   - JSON Schemas live under `resources/schemas/` and are documentation/editor/test resources, not runtime validators.
 
-Windows support is partial in the MVP: folder mode is supported, while symlink dock mode is currently macOS/Linux-oriented.
+Windows dock mode uses directory symbolic links and may require Developer Mode or symlink privileges. CI runs the full tests on Linux, case-only link rename regressions on macOS, and checks Windows compilation.
 
 ## Repository Map
 
@@ -96,7 +93,10 @@ If a change affects the Zed UX directly, keep the manual Zed smoke-test gap visi
 
 - Never modify a dock directory unless it has a valid `.zwd-lock.json` lock owned by this tool.
 - Abort on existing dock directories without a valid lock.
-- Abort when unmanaged files are present inside a lock-owned dock.
+- Preserve unmanaged files, directories, and manual symlinks during open, sync, add, and remove.
+- `delete` previews only; `delete --force` removes all contents of a validated owned dock, including extras, without following symlinks.
+- Reject symlink dock roots and symlink lock files. Block managed link conflicts before reconciliation.
+- Treat the workspace file as configuration and the lock as derived ownership state.
 - Symlink project folders; do not copy source folders into dock roots.
 - Do not delete or mutate symlink targets.
 - Keep workspace names and dock link names to single filesystem entry names.
@@ -135,7 +135,7 @@ Use conventional commit messages with lowercase imperative subjects, for example
 
 ```text
 feat: add registered workspace listing
-fix: reject unmanaged dock contents
+fix: preserve unmanaged dock contents
 docs: document release automation
 ```
 

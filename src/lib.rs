@@ -65,6 +65,7 @@ pub fn run(cli: Cli) -> Result<()> {
             workspace::WorkspaceEditOperation::Remove,
         ),
         Commands::Delete { workspace, force } => delete_workspace(&workspace, force),
+        Commands::Sync { workspace } => sync_workspace(workspace.as_deref()),
         Commands::Status { workspace } => show_workspace_status(workspace.as_deref()),
         Commands::Install {
             command,
@@ -78,6 +79,20 @@ pub fn run(cli: Cli) -> Result<()> {
             Ok(())
         }
     }
+}
+
+fn sync_workspace(reference: Option<&std::path::Path>) -> Result<()> {
+    let workspace_path = resolve_edit_workspace(reference)?;
+    let workspace = workspace::read_workspace_file(&workspace_path)?;
+    let mode = workspace.open_mode(None)?;
+    if mode == cli::Mode::Folders && dock::validate_existing_dock(&workspace_path)?.is_none() {
+        println!("no dock to synchronize (folders mode)");
+        return Ok(());
+    }
+    let folders = workspace.resolved_dock_folders(&workspace_path)?;
+    let dock = dock::build_dock(&workspace_path, &folders)?;
+    println!("dock synchronized\t{}", dock.display());
+    Ok(())
 }
 
 fn edit_workspace(
@@ -166,6 +181,11 @@ fn delete_workspace(reference: &std::path::Path, force: bool) -> Result<()> {
     }
 
     if !force {
+        if dock.is_some() {
+            println!(
+                "contents\tall dock files and directories will be removed; symlink targets are preserved"
+            );
+        }
         println!("dry-run\tpass --force to delete");
         return Ok(());
     }

@@ -37,12 +37,20 @@ A standalone workspace file written inside a user-provided output directory via 
 _Avoid_: Local registry, exported registry entry
 
 **Symlink dock**:
-A lock-protected directory whose entries are symbolic links to the projects from a workspace file. One symlink dock belongs to one workspace file path.
+A lock-protected directory containing managed project symlinks and optionally user-created files, directories, or symlinks. One symlink dock belongs to one workspace file path.
 _Avoid_: Temporary copy, workspace copy, virtual workspace
 
 **Dock lock**:
 The JSON ownership record stored as `.zwd-lock.json` inside a symlink dock. A dock lock identifies the owning workspace file and the symlink entries managed by Zed Workspace Dock.
 _Avoid_: Marker, ownership marker, cache manifest
+
+**Managed dock link**:
+A project symlink whose name and target are recorded in the owning dock lock.
+_Avoid_: Any symlink in the dock
+
+**Unmanaged dock content**:
+A dock entry not recorded as a managed link in the dock lock. It belongs to the dock's local contents but not to workspace membership.
+_Avoid_: Invalid content, inconsistent workspace
 
 **Dock reconciliation**:
 The safe in-place synchronization of an existing owned symlink dock with its workspace membership.
@@ -104,7 +112,7 @@ Older planning text may use pluralized product names, describe `zwd` as an alias
 - Created workspaces store folder paths as canonical absolute paths resolved from the current working directory at creation time.
 - `add <paths>... --workspace <workspace>` and `remove <paths>... --workspace <workspace>` change workspace membership. The workspace flag is optional only from the root of a valid owned dock.
 - `add` and `remove` are idempotent and synchronize an existing dock incrementally. They do not create a dock that does not already exist.
-- `delete <workspace>` prints a deletion preview; `delete <workspace> --force` removes the workspace file and its valid owned dock, never its project folders.
+- `delete <workspace>` prints a deletion preview; `delete <workspace> --force` removes the workspace file and its entire valid owned dock, including unmanaged content, never symlink targets.
 - `status [workspace]` reports workspace and dock health. An absent dock is normal, while unresolvable folders or unsafe docks are unhealthy states.
 - `open <simple-name>` prefers a registered workspace over a same-name file or directory in the current working directory. Use an explicit path such as `./work.code-workspace` when the local file is intended.
 - `list` prints registered workspaces as `name<TAB>path`.

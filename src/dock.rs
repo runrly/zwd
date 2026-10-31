@@ -1,6 +1,7 @@
 use std::{
     collections::HashSet,
     fs,
+    io::Write,
     path::{Path, PathBuf},
 };
 
@@ -48,13 +49,11 @@ pub(crate) fn build_dock_in(
     let workspace_abs = absolute_workspace_path(workspace_path)?;
     let dock_root = dock_root_in(cache_dir, workspace_path, &workspace_abs);
 
-    prepare_dock_dir(&dock_root, &workspace_abs)?;
-
-    for folder in folders {
-        create_symlink(&folder.target, &dock_root.join(folder.name.as_str()))?;
+    if metadata(&dock_root)?.is_none() {
+        fs::create_dir_all(&dock_root)?;
+        write_lock(&dock_root, &workspace_abs, &[])?;
     }
-
-    write_lock(&dock_root, &workspace_abs, folders)?;
+    reconcile_dock(&dock_root, &workspace_abs, folders)?;
 
     Ok(dock_root)
 }
@@ -79,7 +78,7 @@ pub(crate) fn infer_workspace_from_current_dock() -> Result<PathBuf> {
 
 pub(crate) fn validate_existing_dock(workspace_path: &Path) -> Result<Option<PathBuf>> {
     let dock_root = dock_root_for(workspace_path)?;
-    if !dock_root.exists() {
+    if metadata(&dock_root)?.is_none() {
         return Ok(None);
     }
 
@@ -97,13 +96,7 @@ pub(crate) fn sync_existing_dock(
         return Ok(false);
     };
     let workspace_abs = absolute_workspace_path(workspace_path)?;
-    let lock = validate_owned_dock(&dock_root, &workspace_abs)?;
-    let original_folders = resolved_folders_from_lock(&lock)?;
-
-    if let Err(error) = reconcile_dock(&dock_root, &workspace_abs, folders) {
-        let _ = reconcile_dock(&dock_root, &workspace_abs, &original_folders);
-        return Err(error);
-    }
+    reconcile_dock(&dock_root, &workspace_abs, folders)?;
 
     Ok(true)
 }
@@ -112,28 +105,27 @@ pub(crate) fn remove_owned_dock(workspace_path: &Path) -> Result<bool> {
     let Some(dock_root) = validate_existing_dock(workspace_path)? else {
         return Ok(false);
     };
-    let workspace_abs = absolute_workspace_path(workspace_path)?;
-    let lock = validate_owned_dock(&dock_root, &workspace_abs)?;
-
-    remove_locked_links(&dock_root, &lock)?;
-    fs::remove_file(dock_root.join(LOCK_FILE))?;
-    fs::remove_dir(&dock_root)?;
+    fs::remove_dir_all(&dock_root)?;
 
     Ok(true)
 }
 
 pub(crate) fn current_directory_is_dock(workspace_path: &Path) -> Result<bool> {
-    Ok(std::env::current_dir()? == dock_root_for(workspace_path)?)
+    let dock = dock_root_for(workspace_path)?;
+    let Some(_) = metadata(&dock)? else {
+        return Ok(false);
+    };
+    Ok(std::env::current_dir()?.starts_with(dock.canonicalize()?))
 }
 
 pub(crate) fn dock_status(workspace_path: &Path) -> Result<DockStatus> {
     let dock_root = dock_root_for(workspace_path)?;
-    if !dock_root.exists() {
+    if metadata(&dock_root)?.is_none() {
         return Ok(DockStatus::Absent { path: dock_root });
     }
 
     let workspace_abs = absolute_workspace_path(workspace_path)?;
-    match validate_owned_dock(&dock_root, &workspace_abs) {
+    match inspect_dock_health(&dock_root, &workspace_abs) {
         Ok(_) => Ok(DockStatus::Healthy { path: dock_root }),
         Err(error) => Ok(DockStatus::Unhealthy {
             path: dock_root,
@@ -142,31 +134,20 @@ pub(crate) fn dock_status(workspace_path: &Path) -> Result<DockStatus> {
     }
 }
 
-fn prepare_dock_dir(dock_root: &Path, workspace_path: &Path) -> Result<()> {
-    if !dock_root.exists() {
-        fs::create_dir_all(dock_root)?;
-        return Ok(());
+fn metadata(path: &Path) -> Result<Option<fs::Metadata>> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => Ok(Some(metadata)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.into()),
     }
-
-    if !dock_root.is_dir() {
-        return Err(AppError::DockPathNotDirectory {
-            path: dock_root.to_path_buf(),
-        });
-    }
-
-    let lock = validate_owned_dock(dock_root, workspace_path)?;
-    remove_locked_links(dock_root, &lock)?;
-
-    Ok(())
 }
 
 fn validate_owned_dock(dock_root: &Path, workspace_path: &Path) -> Result<DockLock> {
-    if !dock_root.is_dir() {
+    if !fs::symlink_metadata(dock_root)?.is_dir() {
         return Err(AppError::DockPathNotDirectory {
             path: dock_root.to_path_buf(),
         });
     }
-
     let lock = read_lock(dock_root)?;
     if lock.workspace_path != workspace_path {
         return Err(AppError::DockWorkspacePathMismatch {
@@ -174,49 +155,61 @@ fn validate_owned_dock(dock_root: &Path, workspace_path: &Path) -> Result<DockLo
             workspace_path: workspace_path.to_path_buf(),
         });
     }
-
-    let expected_links = lock
-        .links
-        .iter()
-        .map(|link| link.name.as_str())
-        .collect::<HashSet<_>>();
-
-    for entry in fs::read_dir(dock_root)? {
-        let entry = entry?;
-        let file_name = entry.file_name();
-        let file_name = file_name.to_string_lossy();
-
-        if file_name == LOCK_FILE {
-            continue;
-        }
-        if !expected_links.contains(file_name.as_ref()) {
-            return Err(AppError::UnmanagedDockContent { path: entry.path() });
-        }
-        if !entry.file_type()?.is_symlink() {
-            return Err(AppError::ManagedDockEntryNotSymlink { path: entry.path() });
-        }
-    }
-
     Ok(lock)
 }
 
-fn remove_locked_links(dock_root: &Path, lock: &DockLock) -> Result<()> {
-    for entry in fs::read_dir(dock_root)? {
-        let entry = entry?;
-        let file_name = entry.file_name();
-        if file_name == LOCK_FILE {
+fn validate_managed_links(dock_root: &Path, lock: &DockLock) -> Result<()> {
+    for link in &lock.links {
+        let path = dock_root.join(&link.name);
+        let Some(entry) = metadata(&path)? else {
             continue;
+        };
+        if !entry.is_symlink() {
+            return Err(AppError::ManagedDockEntryNotSymlink { path });
         }
-        if lock
-            .links
-            .iter()
-            .any(|link| link.name == file_name.to_string_lossy())
-        {
-            remove_managed_link(&entry.path())?;
+        let actual = fs::read_link(&path)?;
+        if actual != link.target {
+            return Err(AppError::DockLinkTargetMismatch {
+                path,
+                expected: link.target.clone(),
+                actual,
+            });
         }
     }
-
     Ok(())
+}
+
+fn inspect_dock_health(dock_root: &Path, workspace_path: &Path) -> Result<()> {
+    let lock = validate_owned_dock(dock_root, workspace_path)?;
+    validate_managed_links(dock_root, &lock)?;
+    let folders = crate::workspace::read_workspace_file(workspace_path)?
+        .resolved_dock_folders(workspace_path)?;
+    if lock.links.len() != folders.len()
+        || folders.iter().any(|folder| {
+            !lock
+                .links
+                .iter()
+                .any(|link| link.name == folder.name.as_str() && link.target == folder.target)
+        })
+    {
+        return Err(AppError::DockOutOfSync {
+            path: dock_root.to_path_buf(),
+        });
+    }
+    for link in &lock.links {
+        if metadata(&dock_root.join(&link.name))?.is_none() {
+            return Err(AppError::DockOutOfSync {
+                path: dock_root.join(&link.name),
+            });
+        }
+    }
+    Ok(())
+}
+
+struct LinkChange {
+    path: PathBuf,
+    previous: Option<PathBuf>,
+    desired: Option<PathBuf>,
 }
 
 fn reconcile_dock(
@@ -224,58 +217,111 @@ fn reconcile_dock(
     workspace_path: &Path,
     folders: &[ResolvedFolder],
 ) -> Result<()> {
-    for entry in fs::read_dir(dock_root)? {
-        let entry = entry?;
-        let file_name = entry.file_name();
-        if file_name == LOCK_FILE {
-            continue;
-        }
-        let Some(folder) = folders
+    let lock = validate_owned_dock(dock_root, workspace_path)?;
+    validate_managed_links(dock_root, &lock)?;
+    let entry_names = fs::read_dir(dock_root)?
+        .map(|entry| entry.map(|entry| entry.file_name()))
+        .collect::<std::io::Result<HashSet<_>>>()?;
+    let mut changes = Vec::new();
+    for link in &lock.links {
+        let path = dock_root.join(&link.name);
+        let present = metadata(&path)?.is_some();
+        let desired = folders
             .iter()
-            .find(|folder| folder.name.as_str() == file_name.to_string_lossy())
-        else {
-            remove_managed_link(&entry.path())?;
-            continue;
-        };
-        if fs::read_link(entry.path())? != folder.target {
-            remove_managed_link(&entry.path())?;
+            .find(|folder| folder.name.as_str() == link.name);
+        if present && desired.is_none_or(|folder| folder.target != link.target) {
+            changes.push(LinkChange {
+                path,
+                previous: Some(link.target.clone()),
+                desired: desired.map(|folder| folder.target.clone()),
+            });
         }
     }
-
     for folder in folders {
-        let link = dock_root.join(folder.name.as_str());
-        if link.symlink_metadata().is_err() {
-            create_symlink(&folder.target, &link)?;
+        let path = dock_root.join(folder.name.as_str());
+        let present = metadata(&path)?.is_some();
+        let managed = lock
+            .links
+            .iter()
+            .any(|link| link.name == folder.name.as_str());
+        // A successful lookup without this exact directory entry spelling can be
+        // a case-insensitive alias of an old managed name scheduled for removal.
+        // An actual extra entry with the desired spelling must remain a conflict,
+        // even when its symlink points to the same project.
+        let aliases_managed = present
+            && !managed
+            && !entry_names.contains(std::ffi::OsStr::new(folder.name.as_str()))
+            && lock
+                .links
+                .iter()
+                .any(|link| link.name.to_lowercase() == folder.name.as_str().to_lowercase());
+        if present && !managed && !aliases_managed {
+            return Err(AppError::DockLinkPathExists { path });
+        }
+        if !present || aliases_managed {
+            changes.push(LinkChange {
+                path,
+                previous: None,
+                desired: Some(folder.target.clone()),
+            });
         }
     }
-
-    write_lock(dock_root, workspace_path, folders)?;
-
+    for (index, change) in changes.iter().enumerate() {
+        if let Err(error) = apply_link_change(change) {
+            restore_links(&changes[..=index]);
+            return Err(error);
+        }
+    }
+    if let Err(error) = write_lock(dock_root, workspace_path, folders) {
+        restore_links(&changes);
+        return Err(error);
+    }
     Ok(())
 }
 
-fn resolved_folders_from_lock(lock: &DockLock) -> Result<Vec<ResolvedFolder>> {
-    lock.links
-        .iter()
-        .map(|link| {
-            Ok(ResolvedFolder {
-                name: LinkName::new(&link.name)?,
-                target: link.target.clone(),
-            })
-        })
-        .collect()
+fn apply_link_change(change: &LinkChange) -> Result<()> {
+    if change.previous.is_some() {
+        remove_managed_link(&change.path)?;
+    }
+    if let Some(target) = &change.desired {
+        create_symlink(target, &change.path)?;
+    }
+    Ok(())
+}
+
+fn restore_links(changes: &[LinkChange]) {
+    for change in changes.iter().rev() {
+        // Only undo links created by this reconciliation; never remove a conflicting entry.
+        if change
+            .desired
+            .as_ref()
+            .is_some_and(|target| fs::read_link(&change.path).ok().as_ref() == Some(target))
+        {
+            let _ = remove_managed_link(&change.path);
+        }
+        if let Some(target) = &change.previous
+            && matches!(metadata(&change.path), Ok(None))
+        {
+            let _ = create_symlink(target, &change.path);
+        }
+    }
 }
 
 fn read_lock(dock_root: &Path) -> Result<DockLock> {
     let lock_path = dock_root.join(LOCK_FILE);
 
-    if !lock_path.exists() {
+    let Some(lock_metadata) = metadata(&lock_path)? else {
         return Err(AppError::DockMissingLock {
             path: dock_root.to_path_buf(),
         });
+    };
+    if !lock_metadata.is_file() {
+        return Err(AppError::InvalidDockLock {
+            path: lock_path,
+            reason: "must be a regular file, not a symlink",
+        });
     }
-
-    let content = fs::read_to_string(lock_path)?;
+    let content = fs::read_to_string(&lock_path)?;
     let lock: DockLock = serde_json::from_str(&content)?;
 
     if lock.version != LOCK_VERSION {
@@ -284,6 +330,23 @@ fn read_lock(dock_root: &Path) -> Result<DockLock> {
         });
     }
 
+    if !lock.workspace_path.is_absolute()
+        || lock.links.iter().any(|link| !link.target.is_absolute())
+    {
+        return Err(AppError::InvalidDockLock {
+            path: lock_path,
+            reason: "workspace and target paths must be absolute",
+        });
+    }
+    let mut names = HashSet::new();
+    for link in &lock.links {
+        LinkName::new(&link.name)?;
+        if !names.insert(link.name.to_lowercase()) {
+            return Err(AppError::DuplicateFolderName {
+                name: link.name.clone(),
+            });
+        }
+    }
     Ok(lock)
 }
 
@@ -301,9 +364,24 @@ fn write_lock(dock_root: &Path, workspace_path: &Path, folders: &[ResolvedFolder
     };
     let content = serde_json::to_string_pretty(&lock)?;
 
-    fs::write(dock_root.join(LOCK_FILE), format!("{content}\n"))?;
-
-    Ok(())
+    let mut nonce = [0_u8; 16];
+    getrandom::fill(&mut nonce)?;
+    let temporary_path = dock_root.join(format!(".zwd-lock-{}.tmp", hex::encode(nonce)));
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary_path)?;
+    let result = (|| -> Result<()> {
+        writeln!(file, "{content}")?;
+        file.sync_all()?;
+        drop(file);
+        fs::rename(&temporary_path, dock_root.join(LOCK_FILE))?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(temporary_path);
+    }
+    result
 }
 
 fn absolute_workspace_path(path: &Path) -> Result<PathBuf> {
@@ -591,7 +669,7 @@ mod tests {
     }
 
     #[test]
-    fn aborts_when_lock_owned_dock_has_unmanaged_content() {
+    fn preserves_unmanaged_content_when_reconciling() {
         let temp = tempdir().unwrap();
         let project = temp.path().join("api");
         fs::create_dir(&project).unwrap();
@@ -604,12 +682,19 @@ mod tests {
         let dock_root = build_dock_in(temp.path(), &workspace, &folders).unwrap();
         fs::write(dock_root.join("notes.txt"), "do not delete").unwrap();
 
-        let error = build_dock_in(temp.path(), &workspace, &folders)
-            .unwrap_err()
-            .to_string();
-
-        assert!(error.contains("unmanaged content"));
+        build_dock_in(temp.path(), &workspace, &folders).unwrap();
         assert!(dock_root.join("notes.txt").exists());
+    }
+
+    #[test]
+    fn failed_lock_replacement_preserves_destination_and_cleans_temporary_file() {
+        let temp = tempdir().unwrap();
+        let lock = temp.path().join(LOCK_FILE);
+        fs::create_dir(&lock).unwrap();
+        fs::write(lock.join("sentinel"), "keep").unwrap();
+        assert!(write_lock(temp.path(), Path::new("/workspace.code-workspace"), &[]).is_err());
+        assert_eq!(fs::read_to_string(lock.join("sentinel")).unwrap(), "keep");
+        assert_eq!(fs::read_dir(temp.path()).unwrap().count(), 1);
     }
 
     fn read_link_target(path: &Path) -> PathBuf {
